@@ -18,15 +18,34 @@ export type AdminAsset = {
 type Collection = { id: string; name: string };
 type Designer = { id: string; name: string; speciality: string | null };
 
+const STATUSES = [
+  "not_started",
+  "dalle_done",
+  "upscaled",
+  "ready_for_review",
+  "approved",
+  "rejected",
+] as const;
+
+// Statuses counted as "In progress" in the stats bar.
+const IN_PROGRESS_STATUSES: string[] = ["dalle_done", "upscaled", "ready_for_review"];
+const IN_PROGRESS_FILTER = "in_progress";
+
 const STATUS_STYLES: Record<string, string> = {
   not_started: "border-neutral-700 bg-neutral-800/60 text-neutral-300",
-  in_progress: "border-sky-800 bg-sky-950/60 text-sky-300",
-  submitted: "border-violet-800 bg-violet-950/60 text-violet-300",
+  dalle_done: "border-sky-800 bg-sky-950/60 text-sky-300",
+  upscaled: "border-indigo-800 bg-indigo-950/60 text-indigo-300",
+  ready_for_review: "border-violet-800 bg-violet-950/60 text-violet-300",
   approved: "border-[#c9a84c]/60 bg-[#c9a84c]/15 text-[#e2c977]",
   rejected: "border-red-900 bg-red-950/60 text-red-300",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  dalle_done: "DALL·E Done",
+};
+
 function formatStatus(status: string) {
+  if (STATUS_LABELS[status]) return STATUS_LABELS[status];
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
@@ -65,20 +84,26 @@ export function AdminDashboard({
     return [
       { label: "Total designs", value: assets.length, filter: "all" },
       { label: "Not started", value: count("not_started"), filter: "not_started" },
-      { label: "In progress", value: count("in_progress"), filter: "in_progress" },
+      {
+        label: "In progress",
+        value: assets.filter((a) => IN_PROGRESS_STATUSES.includes(a.status)).length,
+        filter: IN_PROGRESS_FILTER,
+      },
       { label: "Approved", value: count("approved"), filter: "approved" },
     ];
   }, [assets]);
 
   const statuses = useMemo(() => {
-    const known = ["not_started", "in_progress", "submitted", "approved", "rejected"];
+    const known: string[] = [...STATUSES];
     const present = assets.map((a) => a.status).filter((s) => !known.includes(s));
     return [...known, ...new Set(present)];
   }, [assets]);
 
   const filtered = assets.filter(
     (a) =>
-      (statusFilter === "all" || a.status === statusFilter) &&
+      (statusFilter === "all" ||
+        a.status === statusFilter ||
+        (statusFilter === IN_PROGRESS_FILTER && IN_PROGRESS_STATUSES.includes(a.status))) &&
       (collectionFilter === "all" || a.collectionId === collectionFilter),
   );
 
@@ -119,6 +144,7 @@ export function AdminDashboard({
               className={selectClass}
             >
               <option value="all">All statuses</option>
+              <option value={IN_PROGRESS_FILTER}>In progress (any)</option>
               {statuses.map((s) => (
                 <option key={s} value={s}>
                   {formatStatus(s)}

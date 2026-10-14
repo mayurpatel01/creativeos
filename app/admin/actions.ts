@@ -19,7 +19,7 @@ export async function assignAssetToDesigner(
 
   const { data: asset, error: assetError } = await supabase
     .from("assets")
-    .select("id, project_id, status")
+    .select("id, project_id")
     .eq("id", assetId)
     .single();
   if (assetError || !asset) {
@@ -52,16 +52,7 @@ export async function assignAssetToDesigner(
     return { ok: false, error: assignError.message };
   }
 
-  if (asset.status === "not_started") {
-    const { error: statusError } = await supabase
-      .from("assets")
-      .update({ status: "in_progress", updated_at: new Date().toISOString() })
-      .eq("id", assetId);
-    if (statusError) {
-      return { ok: false, error: statusError.message };
-    }
-  }
-
+  // Assigning doesn't change the asset's status; it stays where it was.
   refresh();
   return { ok: true };
 }
