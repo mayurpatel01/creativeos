@@ -273,12 +273,13 @@ export function AdminDashboard({
         </section>
 
         <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
-          <table className="w-full min-w-[1140px] text-left text-sm">
+          <table className="w-full min-w-[1000px] text-left text-sm">
             <thead className="bg-[#111] text-xs uppercase tracking-wider text-[#c9a84c]">
               <tr>
                 <th className="px-4 py-3 font-semibold">Preview</th>
                 <th className="px-4 py-3 font-semibold">Design ID</th>
-                <th className="px-4 py-3 font-semibold">Filename</th>
+                {/* Design ID already shows the filename; the full name only fits on wide screens. */}
+                <th className="hidden px-4 py-3 font-semibold 2xl:table-cell">Filename</th>
                 <th className="px-4 py-3 font-semibold">God</th>
                 <th className="px-4 py-3 font-semibold">Country</th>
                 <th className="px-4 py-3 font-semibold">Size</th>
@@ -307,7 +308,7 @@ export function AdminDashboard({
                   <td className="max-w-[200px] px-4 py-2.5">
                     <DesignId designNumber={asset.designNumber} suggestedFilename={asset.filename} />
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-neutral-300">
+                  <td className="hidden px-4 py-2.5 font-mono text-xs text-neutral-300 2xl:table-cell">
                     {asset.filename}
                   </td>
                   <td className="px-4 py-2.5">{asset.god ?? "—"}</td>
@@ -329,7 +330,7 @@ export function AdminDashboard({
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     {asset.status !== "approved" && (
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="ml-auto flex max-w-[230px] flex-wrap items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
                         {asset.status === "dalle_done" && <RegenerateButton asset={asset} />}
                         {asset.gelatoProductId ? (
