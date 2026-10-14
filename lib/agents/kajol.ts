@@ -137,7 +137,7 @@ function pngDimensions(buffer: Buffer): { width: number; height: number } {
 }
 
 const REMOVE_BG_URL = "https://api.remove.bg/v1.0/removebg";
-const REMOVE_BG_SIZE = "regular";
+const REMOVE_BG_SIZE = "full";
 const REMOVE_BG_TIMEOUT_MS = 60_000;
 
 type RemovalResult =
