@@ -1,7 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { ASSIGNMENT_STATUSES, type AssignmentStatus } from "./statuses";
+import { DESIGNER_STATUSES, type DesignerStatus } from "./statuses";
 
 export type SaveResult = { ok: true } | { ok: false; error: string };
 
@@ -22,7 +22,7 @@ async function getOwnedAssignment(token: string, assignmentId: string) {
 
   const { data: assignment } = await supabase
     .from("assignments")
-    .select("id, asset_id")
+    .select("id, asset_id, status")
     .eq("id", assignmentId)
     .eq("designer_id", designer.id)
     .maybeSingle();
@@ -32,14 +32,17 @@ async function getOwnedAssignment(token: string, assignmentId: string) {
 export async function saveAssignmentStatus(
   token: string,
   assignmentId: string,
-  status: AssignmentStatus,
+  status: DesignerStatus,
 ): Promise<SaveResult> {
-  if (!ASSIGNMENT_STATUSES.includes(status)) {
+  if (!DESIGNER_STATUSES.includes(status)) {
     return { ok: false, error: "Invalid status." };
   }
 
   const assignment = await getOwnedAssignment(token, assignmentId);
   if (!assignment) return { ok: false, error: "Assignment not found." };
+  if (assignment.status === "approved") {
+    return { ok: false, error: "This design is already approved." };
+  }
 
   const now = new Date().toISOString();
   const { error } = await getSupabaseAdmin()
@@ -66,6 +69,9 @@ export async function saveDesignerFilename(
 
   const assignment = await getOwnedAssignment(token, assignmentId);
   if (!assignment) return { ok: false, error: "Assignment not found." };
+  if (assignment.status === "approved") {
+    return { ok: false, error: "This design is already approved." };
+  }
 
   // assignments has no filename column, so this lives on assets.designer_filename.
   const { error } = await getSupabaseAdmin()

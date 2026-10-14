@@ -73,3 +73,37 @@ export async function unassignDesigner(assetId: string): Promise<AssignResult> {
   refresh();
   return { ok: true };
 }
+
+export async function approveDesign(assetId: string): Promise<AssignResult> {
+  if (!(await hasAdminCookie())) {
+    return { ok: false, error: "Your admin session has expired. Sign in again." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+
+  const { error: assetError } = await supabase
+    .from("assets")
+    .update({
+      status: "approved",
+      approved: true,
+      approved_at: now,
+      approved_by: "admin",
+      updated_at: now,
+    })
+    .eq("id", assetId);
+  if (assetError) {
+    return { ok: false, error: assetError.message };
+  }
+
+  const { error: assignmentError } = await supabase
+    .from("assignments")
+    .update({ status: "approved", approved_at: now, updated_at: now })
+    .eq("asset_id", assetId);
+  if (assignmentError) {
+    return { ok: false, error: assignmentError.message };
+  }
+
+  refresh();
+  return { ok: true };
+}

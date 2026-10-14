@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { DesignId } from "../_components/design-id";
-import { assignAssetToDesigner, unassignDesigner } from "./actions";
+import {
+  ALL,
+  ClearFiltersButton,
+  COUNTRIES,
+  FilterSelect,
+  GODS,
+  ResultCount,
+  SIZES,
+  toOptions,
+} from "../_components/filters";
+import { approveDesign, assignAssetToDesigner, unassignDesigner } from "./actions";
 
 export type AdminAsset = {
   id: string;
@@ -15,6 +25,7 @@ export type AdminAsset = {
   collectionId: string | null;
   collectionName: string;
   designer: { id: string; name: string } | null;
+  assignmentStatus: string | null;
 };
 
 type Collection = { id: string; name: string };
@@ -32,13 +43,14 @@ const STATUSES = [
 // Statuses counted as "In progress" in the stats bar.
 const IN_PROGRESS_STATUSES: string[] = ["dalle_done", "upscaled", "ready_for_review"];
 const IN_PROGRESS_FILTER = "in_progress";
+const UNASSIGNED_FILTER = "unassigned";
 
 const STATUS_STYLES: Record<string, string> = {
   not_started: "border-neutral-700 bg-neutral-800/60 text-neutral-300",
   dalle_done: "border-sky-800 bg-sky-950/60 text-sky-300",
   upscaled: "border-indigo-800 bg-indigo-950/60 text-indigo-300",
   ready_for_review: "border-violet-800 bg-violet-950/60 text-violet-300",
-  approved: "border-[#c9a84c]/60 bg-[#c9a84c]/15 text-[#e2c977]",
+  approved: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
   rejected: "border-red-900 bg-red-950/60 text-red-300",
 };
 
@@ -77,14 +89,18 @@ export function AdminDashboard({
   collections: Collection[];
   designers: Designer[];
 }) {
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [collectionFilter, setCollectionFilter] = useState("all");
+  const [godFilter, setGodFilter] = useState(ALL);
+  const [countryFilter, setCountryFilter] = useState(ALL);
+  const [sizeFilter, setSizeFilter] = useState(ALL);
+  const [statusFilter, setStatusFilter] = useState(ALL);
+  const [collectionFilter, setCollectionFilter] = useState(ALL);
+  const [designerFilter, setDesignerFilter] = useState(ALL);
   const [assigning, setAssigning] = useState<AdminAsset | null>(null);
 
   const stats = useMemo(() => {
     const count = (status: string) => assets.filter((a) => a.status === status).length;
     return [
-      { label: "Total designs", value: assets.length, filter: "all" },
+      { label: "Total designs", value: assets.length, filter: ALL },
       { label: "Not started", value: count("not_started"), filter: "not_started" },
       {
         label: "In progress",
@@ -101,12 +117,37 @@ export function AdminDashboard({
     return [...known, ...new Set(present)];
   }, [assets]);
 
+  const filtersActive = [
+    godFilter,
+    countryFilter,
+    sizeFilter,
+    statusFilter,
+    collectionFilter,
+    designerFilter,
+  ].some((f) => f !== ALL);
+
+  function clearFilters() {
+    setGodFilter(ALL);
+    setCountryFilter(ALL);
+    setSizeFilter(ALL);
+    setStatusFilter(ALL);
+    setCollectionFilter(ALL);
+    setDesignerFilter(ALL);
+  }
+
   const filtered = assets.filter(
     (a) =>
-      (statusFilter === "all" ||
+      (godFilter === ALL || a.god === godFilter) &&
+      (countryFilter === ALL || a.country === countryFilter) &&
+      (sizeFilter === ALL || a.size === sizeFilter) &&
+      (statusFilter === ALL ||
         a.status === statusFilter ||
         (statusFilter === IN_PROGRESS_FILTER && IN_PROGRESS_STATUSES.includes(a.status))) &&
-      (collectionFilter === "all" || a.collectionId === collectionFilter),
+      (collectionFilter === ALL || a.collectionId === collectionFilter) &&
+      (designerFilter === ALL ||
+        (designerFilter === UNASSIGNED_FILTER
+          ? a.designer === null
+          : a.designer?.id === designerFilter)),
   );
 
   return (
@@ -138,40 +179,56 @@ export function AdminDashboard({
         </section>
 
         <section className="mt-6 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-neutral-400">
-            Status
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All statuses</option>
-              <option value={IN_PROGRESS_FILTER}>In progress (any)</option>
-              {statuses.map((s) => (
-                <option key={s} value={s}>
-                  {formatStatus(s)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-400">
-            Collection
-            <select
-              value={collectionFilter}
-              onChange={(e) => setCollectionFilter(e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All collections</option>
-              {collections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="ml-auto text-sm text-neutral-500">
-            Showing {filtered.length} of {assets.length}
-          </p>
+          <FilterSelect
+            label="God"
+            allLabel="All gods"
+            value={godFilter}
+            options={toOptions(GODS)}
+            onChange={setGodFilter}
+          />
+          <FilterSelect
+            label="Country"
+            allLabel="All countries"
+            value={countryFilter}
+            options={toOptions(COUNTRIES)}
+            onChange={setCountryFilter}
+          />
+          <FilterSelect
+            label="Size"
+            allLabel="All sizes"
+            value={sizeFilter}
+            options={toOptions(SIZES)}
+            onChange={setSizeFilter}
+          />
+          <FilterSelect
+            label="Status"
+            allLabel="All statuses"
+            value={statusFilter}
+            options={[
+              { value: IN_PROGRESS_FILTER, label: "In progress (any)" },
+              ...statuses.map((s) => ({ value: s, label: formatStatus(s) })),
+            ]}
+            onChange={setStatusFilter}
+          />
+          <FilterSelect
+            label="Collection"
+            allLabel="All collections"
+            value={collectionFilter}
+            options={collections.map((c) => ({ value: c.id, label: c.name }))}
+            onChange={setCollectionFilter}
+          />
+          <FilterSelect
+            label="Designer"
+            allLabel="All designers"
+            value={designerFilter}
+            options={[
+              { value: UNASSIGNED_FILTER, label: "Unassigned" },
+              ...designers.map((d) => ({ value: d.id, label: d.name })),
+            ]}
+            onChange={setDesignerFilter}
+          />
+          <ClearFiltersButton disabled={!filtersActive} onClick={clearFilters} />
+          <ResultCount shown={filtered.length} total={assets.length} />
         </section>
 
         <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
@@ -209,20 +266,25 @@ export function AdminDashboard({
                     {asset.designer ? (
                       <div className="flex items-center gap-2">
                         <span>{asset.designer.name}</span>
-                        <UnassignButton asset={asset} />
+                        {asset.status !== "approved" && <UnassignButton asset={asset} />}
                       </div>
                     ) : (
                       <span className="text-neutral-600">Unassigned</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setAssigning(asset)}
-                      className="whitespace-nowrap rounded-md border border-[#c9a84c]/50 px-3 py-1 text-xs font-medium text-[#c9a84c] transition hover:bg-[#c9a84c] hover:text-[#0a0a0a]"
-                    >
-                      {asset.designer ? "Reassign" : "Assign to Designer"}
-                    </button>
+                    {asset.status !== "approved" && (
+                      <div className="flex items-center justify-end gap-2">
+                        {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
+                        <button
+                          type="button"
+                          onClick={() => setAssigning(asset)}
+                          className="whitespace-nowrap rounded-md border border-[#c9a84c]/50 px-3 py-1 text-xs font-medium text-[#c9a84c] transition hover:bg-[#c9a84c] hover:text-[#0a0a0a]"
+                        >
+                          {asset.designer ? "Reassign" : "Assign to Designer"}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -246,6 +308,39 @@ export function AdminDashboard({
         />
       )}
     </main>
+  );
+}
+
+function ApproveButton({ asset }: { asset: AdminAsset }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function approve() {
+    const label = asset.designNumber === null ? asset.filename : `#${asset.designNumber}`;
+    if (!window.confirm(`Approve ${label} (${asset.filename})?`)) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await approveDesign(asset.id);
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  return (
+    <>
+      {error && (
+        <span role="alert" className="text-[11px] text-red-400">
+          {error}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={approve}
+        disabled={pending}
+        className="whitespace-nowrap rounded-md border border-[#4caf50] bg-transparent px-3 py-1 text-xs font-medium text-[#4caf50] transition hover:bg-[#4caf50]/15 disabled:opacity-50"
+      >
+        {pending ? "Approving…" : "Approve"}
+      </button>
+    </>
   );
 }
 

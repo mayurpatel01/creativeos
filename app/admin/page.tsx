@@ -77,7 +77,7 @@ async function AdminContent({
         .order("sort_order"),
       supabase
         .from("assignments")
-        .select("asset_id, designer_id, created_at, designers(name)")
+        .select("asset_id, designer_id, status, created_at, designers(name)")
         .eq("project_id", project.id)
         .order("created_at", { ascending: false }),
       supabase
@@ -92,11 +92,17 @@ async function AdminContent({
   }
 
   // Results are newest first, so the first assignment seen per asset is the current one.
-  const designerByAsset = new Map<string, { id: string; name: string }>();
+  const assignmentByAsset = new Map<
+    string,
+    { designer: { id: string; name: string }; status: string }
+  >();
   for (const a of assignmentsResult.data ?? []) {
-    if (!designerByAsset.has(a.asset_id)) {
+    if (!assignmentByAsset.has(a.asset_id)) {
       const designer = Array.isArray(a.designers) ? a.designers[0] : a.designers;
-      designerByAsset.set(a.asset_id, { id: a.designer_id, name: designer?.name ?? "Unknown" });
+      assignmentByAsset.set(a.asset_id, {
+        designer: { id: a.designer_id, name: designer?.name ?? "Unknown" },
+        status: a.status,
+      });
     }
   }
 
@@ -112,7 +118,8 @@ async function AdminContent({
       status: a.status,
       collectionId: a.collection_id,
       collectionName: collection?.name ?? "—",
-      designer: designerByAsset.get(a.id) ?? null,
+      designer: assignmentByAsset.get(a.id)?.designer ?? null,
+      assignmentStatus: assignmentByAsset.get(a.id)?.status ?? null,
     };
   });
 
