@@ -49,14 +49,27 @@ const COUNTRIES: Record<string, string> = {
   AUS: "Australia",
   SUR: "Suriname",
   RSA: "South Africa",
+  TZA: "Tanzania",
+  KEN: "Kenya",
 };
+
+// Optional flag details added to the prompt. The original 10 countries were
+// seeded without them, so their prompts stay as they are.
+const FLAG_DESCRIPTIONS: Record<string, string> = {
+  TZA: "green, yellow and black diagonal stripe with blue triangles",
+  KEN: "black, red and green horizontal stripes with a Maasai shield and spears",
+};
+
+// design_number has no database default; new designs continue from the highest.
+const FIRST_DESIGN_NUMBER = 1001;
 
 const supabase = getSupabaseAdmin();
 
 const SIZES = ["FULL", "CHEST"] as const;
 
-function buildPrompt(godDescription: string, country: string): string {
-  return `T-shirt graphic art of ${godDescription}. The design seamlessly incorporates both the American flag and the ${country} flag — flag colors, patterns, and elements woven into the deity's clothing, mandala halo, and background. Airbrush illustration style, vibrant colors, transparent background, no text, print ready.`;
+function buildPrompt(godDescription: string, country: string, flagDescription?: string): string {
+  const flag = flagDescription ? `${country} flag (${flagDescription})` : `${country} flag`;
+  return `T-shirt graphic art of ${godDescription}. The design seamlessly incorporates both the American flag and the ${flag} — flag colors, patterns, and elements woven into the deity's clothing, mandala halo, and background. Airbrush illustration style, vibrant colors, transparent background, no text, print ready.`;
 }
 
 async function getId(
@@ -91,7 +104,7 @@ const rows = Object.entries(GODS).flatMap(([godCode, god]) =>
       size_variant: size,
       subject: god.name,
       suggested_filename: `${godCode}_USA-${countryCode}_${size}_v1.png`,
-      dalle_prompt: buildPrompt(god.description, country),
+      dalle_prompt: buildPrompt(god.description, country, FLAG_DESCRIPTIONS[countryCode]),
       tags: [god.name.toLowerCase(), "usa", country.toLowerCase(), "flag-combo", size.toLowerCase()],
       keywords: [god.name, "Hindu", "USA", country, "flag", "t-shirt"],
       brand_visibility: [],
@@ -109,7 +122,22 @@ const { data: existing, error: existingError } = await supabase
 if (existingError) throw existingError;
 
 const seeded = new Set(existing.map((r) => r.suggested_filename));
-const toInsert = rows.filter((r) => !seeded.has(r.suggested_filename));
+
+// Number new designs after the highest existing one, in god → country → size order.
+const { data: highest, error: highestError } = await supabase
+  .from("assets")
+  .select("design_number")
+  .eq("project_id", projectId)
+  .not("design_number", "is", null)
+  .order("design_number", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+if (highestError) throw highestError;
+
+let nextNumber = (highest?.design_number ?? FIRST_DESIGN_NUMBER - 1) + 1;
+const toInsert = rows
+  .filter((r) => !seeded.has(r.suggested_filename))
+  .map((r) => ({ ...r, design_number: nextNumber++ }));
 
 if (toInsert.length === 0) {
   console.log(`All ${rows.length} flag combo designs already exist. Nothing to insert.`);
@@ -117,6 +145,7 @@ if (toInsert.length === 0) {
   const { error } = await supabase.from("assets").insert(toInsert);
   if (error) throw error;
   console.log(
-    `Inserted ${toInsert.length} assets (${seeded.size} already existed, ${rows.length} total).`,
+    `Inserted ${toInsert.length} assets #${toInsert[0].design_number}–#${toInsert.at(-1)!.design_number} ` +
+      `(${seeded.size} already existed, ${rows.length} total).`,
   );
 }
