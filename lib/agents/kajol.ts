@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { DESIGN_BUCKET, designObjectUrl, designStoragePath } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 import { getSupabaseAdmin } from "../supabase";
@@ -29,10 +29,15 @@ function withWhiteBackground(prompt: string): string {
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+const BACKGROUND_REMOVAL_PROMPT =
+  "Remove the background completely, make it fully transparent. Keep all details of the central design exactly as they are.";
+
 export type KajolSummary = {
   generated: number;
   failed: number;
   errors: string[];
+  // Images kept on white because background removal failed.
+  backgroundRemovalFailed: number;
   test?: boolean;
 };
 
@@ -115,19 +120,67 @@ async function generateImage(prompt: string): Promise<Buffer> {
   throw new Error("OpenAI returned no image data");
 }
 
-async function processAsset(asset: PendingAsset): Promise<{ filePath: string; fileUrl: string }> {
+function isPng(buffer: Buffer): boolean {
+  return buffer.subarray(0, 8).equals(PNG_SIGNATURE);
+}
+
+// True if the PNG can hold transparency: an RGBA or gray+alpha color type in the
+// IHDR header (byte 25), or a palette with a tRNS transparency chunk.
+function pngHasAlpha(buffer: Buffer): boolean {
+  const colorType = buffer[25];
+  return colorType === 4 || colorType === 6 || (colorType === 3 && buffer.includes("tRNS"));
+}
+
+// Second pass: ask the edits endpoint to strip the white background. Returns null
+// on any failure so the caller keeps the white-background original.
+async function removeBackground(png: Buffer, label: string): Promise<Buffer | null> {
+  log(`${label}: removing background`);
+  const started = Date.now();
+  try {
+    const response = await getOpenAI().images.edit({
+      model: IMAGE_MODEL,
+      image: await toFile(png, "design.png", { type: "image/png" }),
+      prompt: BACKGROUND_REMOVAL_PROMPT,
+      n: 1,
+      size: IMAGE_SIZE,
+      // Without these the edit may come back opaque; transparency needs PNG or WebP.
+      background: "transparent",
+      output_format: "png",
+    });
+
+    const b64 = response.data?.[0]?.b64_json;
+    if (!b64) throw new Error("edit returned no image data");
+    const edited = Buffer.from(b64, "base64");
+    if (!isPng(edited)) throw new Error("edit result is not a PNG");
+    if (!pngHasAlpha(edited)) throw new Error("edit result has no transparency channel");
+
+    log(`${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    return edited;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError(`${label}: background removal failed, keeping white background: ${message}`);
+    return null;
+  }
+}
+
+async function processAsset(
+  asset: PendingAsset,
+): Promise<{ filePath: string; fileUrl: string; backgroundRemoved: boolean }> {
   const supabase = getSupabaseAdmin();
   const label = `#${asset.design_number ?? "?"} ${asset.suggested_filename}`;
   const filePath = designStoragePath(asset.god, asset.suggested_filename);
 
   log(`${label}: generating image with ${IMAGE_MODEL}`);
   const started = Date.now();
-  const png = await generateImage(asset.dalle_prompt);
-  log(`${label}: received ${(png.length / 1024).toFixed(0)} KB in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  const generated = await generateImage(asset.dalle_prompt);
+  log(`${label}: received ${(generated.length / 1024).toFixed(0)} KB in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
-  if (!png.subarray(0, 8).equals(PNG_SIGNATURE)) {
+  if (!isPng(generated)) {
     throw new Error("Generated file is not a PNG");
   }
+
+  const transparent = await removeBackground(generated, label);
+  const png = transparent ?? generated;
 
   log(`${label}: uploading to ${DESIGN_BUCKET}/${filePath}`);
   // upsert: false so Kajol never overwrites a file a designer has already uploaded.
@@ -166,7 +219,7 @@ async function processAsset(asset: PendingAsset): Promise<{ filePath: string; fi
   }
 
   log(`${label}: done`);
-  return { filePath, fileUrl };
+  return { filePath, fileUrl, backgroundRemoved: transparent !== null };
 }
 
 async function signedUrlFor(filePath: string): Promise<string | undefined> {
@@ -195,7 +248,13 @@ export async function runKajol(
   running = true;
 
   const test = options.test === true;
-  const summary: KajolSummary = { generated: 0, failed: 0, errors: [], ...(test && { test: true }) };
+  const summary: KajolSummary = {
+    generated: 0,
+    failed: 0,
+    errors: [],
+    backgroundRemovalFailed: 0,
+    ...(test && { test: true }),
+  };
   const images: KajolImage[] = [];
   let runId: string | null = null;
 
@@ -235,8 +294,9 @@ export async function runKajol(
     // One at a time to stay within OpenAI rate limits.
     for (const asset of assets as PendingAsset[]) {
       try {
-        const { filePath, fileUrl } = await processAsset(asset);
+        const { filePath, fileUrl, backgroundRemoved } = await processAsset(asset);
         summary.generated++;
+        if (!backgroundRemoved) summary.backgroundRemovalFailed++;
         images.push({
           designNumber: asset.design_number,
           filename: asset.suggested_filename,
