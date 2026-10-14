@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { DESIGN_BUCKET, designObjectUrl, designStoragePath } from "../design-storage";
+import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 import { getSupabaseAdmin } from "../supabase";
 
 // Kajol: generates artwork for not-started Hindu Tees designs from their dalle_prompt.
@@ -7,6 +8,9 @@ import { getSupabaseAdmin } from "../supabase";
 const AGENT = "Kajol";
 const PROJECT_SLUG = "hindu-tees";
 const BATCH_SIZE = 10;
+const TEST_BATCH_SIZE = 1;
+// How long the test-run link to the private image stays valid.
+const TEST_SIGNED_URL_SECONDS = 60 * 60;
 
 // dall-e-3 was retired on 2026-05-12; gpt-image-2 is its replacement here.
 const IMAGE_MODEL = "gpt-image-2";
@@ -21,7 +25,19 @@ export type KajolSummary = {
   generated: number;
   failed: number;
   errors: string[];
+  test?: boolean;
 };
+
+export type KajolImage = {
+  designNumber: number | null;
+  filename: string;
+  filePath: string;
+  fileUrl: string;
+  // Test runs only: a temporary link that opens the image (the bucket is private).
+  signedUrl?: string;
+};
+
+export type KajolResult = KajolSummary & { images: KajolImage[] };
 
 export class KajolBusyError extends Error {
   constructor() {
@@ -29,12 +45,20 @@ export class KajolBusyError extends Error {
   }
 }
 
+export type KajolLogLine = { level: "info" | "error"; message: string; at: string };
+
+// Set for the duration of a run so callers can stream progress. Only one run
+// happens per process at a time, so a single listener is enough.
+let logListener: ((line: KajolLogLine) => void) | null = null;
+
 function log(message: string, ...details: unknown[]) {
   console.log(`[${AGENT}] ${message}`, ...details);
+  logListener?.({ level: "info", message, at: new Date().toISOString() });
 }
 
 function logError(message: string, ...details: unknown[]) {
   console.error(`[${AGENT}] ${message}`, ...details);
+  logListener?.({ level: "error", message, at: new Date().toISOString() });
 }
 
 let openai: OpenAI | undefined;
@@ -83,7 +107,7 @@ async function generateImage(prompt: string): Promise<Buffer> {
   throw new Error("OpenAI returned no image data");
 }
 
-async function processAsset(asset: PendingAsset): Promise<void> {
+async function processAsset(asset: PendingAsset): Promise<{ filePath: string; fileUrl: string }> {
   const supabase = getSupabaseAdmin();
   const label = `#${asset.design_number ?? "?"} ${asset.suggested_filename}`;
   const filePath = designStoragePath(asset.god, asset.suggested_filename);
@@ -107,11 +131,12 @@ async function processAsset(asset: PendingAsset): Promise<void> {
   }
 
   log(`${label}: marking dalle_done`);
+  const fileUrl = designObjectUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!, filePath);
   const { data: updated, error: updateError } = await supabase
     .from("assets")
     .update({
       status: "dalle_done",
-      file_url: designObjectUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!, filePath),
+      file_url: fileUrl,
       file_path: filePath,
       file_type: "image/png",
       resolution_width: 1024,
@@ -133,19 +158,44 @@ async function processAsset(asset: PendingAsset): Promise<void> {
   }
 
   log(`${label}: done`);
+  return { filePath, fileUrl };
+}
+
+async function signedUrlFor(filePath: string): Promise<string | undefined> {
+  const { data, error } = await getSupabaseAdmin()
+    .storage.from(DESIGN_BUCKET)
+    .createSignedUrl(filePath, TEST_SIGNED_URL_SECONDS);
+  if (error) {
+    logError(`couldn't create a viewing link for ${filePath}: ${error.message}`);
+    return undefined;
+  }
+  return data.signedUrl;
 }
 
 let running = false;
 
-export async function runKajol(): Promise<KajolSummary> {
-  // Guards against overlapping runs in this server process, which would pay to
-  // generate the same assets twice.
+export async function runKajol(
+  options: {
+    onLog?: (line: KajolLogLine) => void;
+    // Generate a single image and return a viewing link, to check quality.
+    test?: boolean;
+  } = {},
+): Promise<KajolResult> {
+  // Overlapping runs would pay to generate the same assets twice. The flag covers
+  // this process; agent_runs covers other server instances.
   if (running) throw new KajolBusyError();
   running = true;
 
-  const summary: KajolSummary = { generated: 0, failed: 0, errors: [] };
+  const test = options.test === true;
+  const summary: KajolSummary = { generated: 0, failed: 0, errors: [], ...(test && { test: true }) };
+  const images: KajolImage[] = [];
+  let runId: string | null = null;
 
   try {
+    if (await hasActiveRun(AGENT)) throw new KajolBusyError();
+    logListener = options.onLog ?? null;
+    runId = await startAgentRun(AGENT);
+
     const supabase = getSupabaseAdmin();
     getOpenAI();
 
@@ -169,16 +219,23 @@ export async function runKajol(): Promise<KajolSummary> {
       .not("suggested_filename", "is", null)
       .not("dalle_prompt", "is", null)
       .order("design_number")
-      .limit(BATCH_SIZE);
+      .limit(test ? TEST_BATCH_SIZE : BATCH_SIZE);
     if (assetsError) throw new Error(`Asset query failed: ${assetsError.message}`);
 
-    log(`starting run: ${assets.length} asset(s) to generate`);
+    log(`starting ${test ? "test " : ""}run: ${assets.length} asset(s) to generate`);
 
     // One at a time to stay within OpenAI rate limits.
     for (const asset of assets as PendingAsset[]) {
       try {
-        await processAsset(asset);
+        const { filePath, fileUrl } = await processAsset(asset);
         summary.generated++;
+        images.push({
+          designNumber: asset.design_number,
+          filename: asset.suggested_filename,
+          filePath,
+          fileUrl,
+          ...(test && { signedUrl: await signedUrlFor(filePath) }),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logError(`${asset.suggested_filename}: failed: ${message}`);
@@ -188,8 +245,21 @@ export async function runKajol(): Promise<KajolSummary> {
     }
 
     log(`run complete: ${summary.generated} generated, ${summary.failed} failed`);
-    return summary;
+    // Signed links expire, so agent_runs keeps only the summary.
+    await finishAgentRun(AGENT, runId, "completed", summary);
+    return { ...summary, images };
+  } catch (err) {
+    if (!(err instanceof KajolBusyError)) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError(`run failed: ${message}`);
+      await finishAgentRun(AGENT, runId, "failed", {
+        ...summary,
+        errors: [...summary.errors, message],
+      });
+    }
+    throw err;
   } finally {
+    logListener = null;
     running = false;
   }
 }

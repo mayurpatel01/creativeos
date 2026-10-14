@@ -161,18 +161,26 @@ export function AdminDashboard({
             </p>
             <h1 className="mt-1 text-3xl font-semibold text-white">{projectName}</h1>
           </div>
-          <Link
-            href="/rani"
-            className="flex items-center gap-2 rounded-lg border border-[#c9a84c]/50 px-3 py-2 text-sm font-medium text-[#c9a84c] transition hover:bg-[#c9a84c] hover:text-[#0a0a0a]"
-          >
-            <span
-              aria-hidden
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-[#c9a84c] text-[11px] font-semibold text-[#0a0a0a]"
+          <div className="flex items-center gap-2">
+            <Link
+              href="/agents"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c]"
             >
-              R
-            </span>
-            Ask Rani
-          </Link>
+              Agents
+            </Link>
+            <Link
+              href="/rani"
+              className="flex items-center gap-2 rounded-lg border border-[#c9a84c]/50 px-3 py-2 text-sm font-medium text-[#c9a84c] transition hover:bg-[#c9a84c] hover:text-[#0a0a0a]"
+            >
+              <span
+                aria-hidden
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-[#c9a84c] text-[11px] font-semibold text-[#0a0a0a]"
+              >
+                R
+              </span>
+              Ask Rani
+            </Link>
+          </div>
         </header>
 
         <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
