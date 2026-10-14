@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { hasAdminCookie } from "@/lib/admin-auth";
+import { resetDesignFile } from "@/lib/assets/reset-file";
 import { DESIGN_BUCKET } from "@/lib/design-storage";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -144,45 +145,15 @@ export async function getSignedImageUrl(filePath: string): Promise<string | null
   return result.ok ? (result.urls[filePath] ?? null) : null;
 }
 
-// Sends a dalle_done design back to Kajol: deletes the stored image (Kajol never
-// overwrites an existing file) and clears its file fields.
+// Sends a design back to Kajol: deletes its stored image and resets it to
+// not_started. Allowed for any design with a file, or that is dalle_done.
 export async function resetDesignForRegeneration(assetId: string): Promise<AssignResult> {
   if (!(await hasAdminCookie())) {
     return { ok: false, error: "Your admin session has expired. Sign in again." };
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data: asset, error: assetError } = await supabase
-    .from("assets")
-    .select("status, file_path")
-    .eq("id", assetId)
-    .single();
-  if (assetError || !asset) return { ok: false, error: "Asset not found." };
-  if (asset.status !== "dalle_done") {
-    return { ok: false, error: `Only dalle_done designs can be regenerated (this one is ${asset.status}).` };
-  }
-
-  if (asset.file_path) {
-    const { error: removeError } = await supabase.storage.from(DESIGN_BUCKET).remove([asset.file_path]);
-    if (removeError) return { ok: false, error: `Couldn't delete the old image: ${removeError.message}` };
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from("assets")
-    .update({
-      status: "not_started",
-      file_url: null,
-      file_path: null,
-      file_type: null,
-      resolution_width: null,
-      resolution_height: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", assetId)
-    .eq("status", "dalle_done")
-    .select("id");
-  if (updateError) return { ok: false, error: updateError.message };
-  if (!updated?.length) return { ok: false, error: "The design changed status while resetting. Reload and try again." };
+  const result = await resetDesignFile(assetId);
+  if (!result.ok) return { ok: false, error: result.error };
 
   refresh();
   return { ok: true };

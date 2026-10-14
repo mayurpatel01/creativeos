@@ -176,7 +176,13 @@ export function AdminDashboard({
             </p>
             <h1 className="mt-1 text-3xl font-semibold text-white">{projectName}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/admin/review"
+              className="rounded-lg border border-[#4caf50]/60 px-3 py-2 text-sm font-medium text-[#7bd67f] transition hover:bg-[#4caf50]/15"
+            >
+              Review Queue ({assets.filter((a) => a.status === "dalle_done").length} pending)
+            </Link>
             <Link
               href="/agents"
               className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c]"
@@ -332,7 +338,7 @@ export function AdminDashboard({
                     {asset.status !== "approved" && (
                       <div className="ml-auto flex max-w-[230px] flex-wrap items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
-                        {asset.status === "dalle_done" && <RegenerateButton asset={asset} />}
+                        {(asset.filePath || asset.status === "dalle_done") && <RegenerateButton asset={asset} />}
                         {asset.gelatoProductId ? (
                           <GelatoStatus
                             productId={asset.gelatoProductId}

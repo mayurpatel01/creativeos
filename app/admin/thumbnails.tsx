@@ -28,7 +28,7 @@ async function flush() {
   }
 }
 
-function requestSignedUrl(path: string, force = false): Promise<string | null> {
+export function requestSignedUrl(path: string, force = false): Promise<string | null> {
   const cached = cache.get(path);
   if (!force && cached && cached.expiresAt - EXPIRY_MARGIN_MS > Date.now()) {
     return Promise.resolve(cached.url);
