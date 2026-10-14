@@ -1,11 +1,20 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { DESIGNER_STATUSES, type DesignerStatus } from "./statuses";
+import {
+  ASSIGNMENT_STATUS_LABELS,
+  DESIGNER_STATUSES,
+  isLockedStatus,
+  type DesignerStatus,
+} from "./statuses";
 
 export type SaveResult = { ok: true } | { ok: false; error: string };
 
 const MAX_FILENAME_LENGTH = 255;
+
+function lockedMessage(status: keyof typeof ASSIGNMENT_STATUS_LABELS): string {
+  return `This design is ${ASSIGNMENT_STATUS_LABELS[status].toLowerCase()} and can't be edited.`;
+}
 
 // The token is the only auth, so every save re-checks that it belongs to an
 // active designer who owns this assignment.
@@ -73,8 +82,8 @@ export async function saveAssignmentStatus(
 
   const assignment = await getOwnedAssignment(token, assignmentId);
   if (!assignment) return { ok: false, error: "Assignment not found." };
-  if (assignment.status === "approved") {
-    return { ok: false, error: "This design is already approved." };
+  if (isLockedStatus(assignment.status)) {
+    return { ok: false, error: lockedMessage(assignment.status) };
   }
 
   const now = new Date().toISOString();
@@ -115,8 +124,8 @@ export async function saveDesignerFilename(
 
   const assignment = await getOwnedAssignment(token, assignmentId);
   if (!assignment) return { ok: false, error: "Assignment not found." };
-  if (assignment.status === "approved") {
-    return { ok: false, error: "This design is already approved." };
+  if (isLockedStatus(assignment.status)) {
+    return { ok: false, error: lockedMessage(assignment.status) };
   }
 
   // assignments has no filename column, so this lives on assets.designer_filename.

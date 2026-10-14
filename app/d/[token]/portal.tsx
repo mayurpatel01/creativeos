@@ -17,8 +17,10 @@ import {
   ASSIGNMENT_STATUSES,
   ASSIGNMENT_STATUS_LABELS,
   DESIGNER_STATUSES,
+  isLockedStatus,
   type AssignmentStatus,
   type DesignerStatus,
+  type LockedStatus,
 } from "./statuses";
 
 export type DesignerAssignment = {
@@ -39,11 +41,16 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 const FILENAME_DEBOUNCE_MS = 800;
 
-const STATUS_SELECT_STYLES: Record<AssignmentStatus, string> = {
+const STATUS_SELECT_STYLES: Record<DesignerStatus, string> = {
   assigned: "border-neutral-700 text-neutral-300",
   in_progress: "border-sky-800 text-sky-300",
   submitted: "border-[#c9a84c]/70 text-[#e2c977]",
-  approved: "border-[#4caf50]/60 text-[#7bd67f]",
+};
+
+const LOCKED_BADGE_STYLES: Record<LockedStatus, string> = {
+  approved: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
+  rejected: "border-red-900 bg-red-950/60 text-red-300",
+  cancelled: "border-neutral-700 bg-neutral-800/60 text-neutral-400",
 };
 
 export function DesignerPortal({
@@ -80,12 +87,14 @@ export function DesignerPortal({
     (statusFilter === ALL || statuses[a.id] === statusFilter);
 
   const shown = assignments.filter(matches).length;
-  const total = assignments.length;
-  // Approved designs were submitted first, so they count toward progress.
-  const submitted = Object.values(statuses).filter(
-    (s) => s === "submitted" || s === "approved",
-  ).length;
-  const percent = total === 0 ? 0 : Math.round((submitted / total) * 100);
+  // Rejected and cancelled designs are no longer work to do, so they're left out of
+  // progress entirely. Approved designs were submitted first, so they count as done.
+  const progressStatuses = Object.values(statuses).filter(
+    (s) => s !== "rejected" && s !== "cancelled",
+  );
+  const progressTotal = progressStatuses.length;
+  const submitted = progressStatuses.filter((s) => s === "submitted" || s === "approved").length;
+  const percent = progressTotal === 0 ? 0 : Math.round((submitted / progressTotal) * 100);
 
   return (
     <main className="min-h-screen flex-1 bg-[#0a0a0a] text-neutral-200">
@@ -100,14 +109,14 @@ export function DesignerPortal({
             <div className="flex items-baseline justify-between text-sm">
               <span className="text-neutral-400">
                 <span className="font-semibold tabular-nums text-[#c9a84c]">{submitted}</span> of{" "}
-                <span className="tabular-nums">{total}</span> submitted
+                <span className="tabular-nums">{progressTotal}</span> submitted
               </span>
               <span className="tabular-nums text-neutral-500">{percent}%</span>
             </div>
             <div
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={total}
+              aria-valuemax={progressTotal}
               aria-valuenow={submitted}
               aria-label="Designs submitted"
               className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-800"
@@ -120,7 +129,7 @@ export function DesignerPortal({
           </div>
         </header>
 
-        {total === 0 ? (
+        {assignments.length === 0 ? (
           <p className="mt-10 rounded-xl border border-neutral-800 bg-[#111] p-10 text-center text-neutral-400">
             You don&apos;t have any assignments yet. Check back soon.
           </p>
@@ -159,7 +168,7 @@ export function DesignerPortal({
                 onChange={setStatusFilter}
               />
               <ClearFiltersButton disabled={!filtersActive} onClick={clearFilters} />
-              <ResultCount shown={shown} total={total} />
+              <ResultCount shown={shown} total={assignments.length} />
             </section>
             <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
               <table className="w-full min-w-[1080px] text-left text-sm">
@@ -261,7 +270,6 @@ function AssignmentRow({
     timer.current = setTimeout(() => flushFilename(value), FILENAME_DEBOUNCE_MS);
   }
 
-  const approved = status === "approved";
 
   function handleStatusChange(next: DesignerStatus) {
     const previous = status;
@@ -305,7 +313,7 @@ function AssignmentRow({
           value={filename}
           onChange={(e) => handleFilenameChange(e.target.value)}
           onBlur={(e) => flushFilename(e.target.value)}
-          readOnly={approved}
+          readOnly={isLockedStatus(status)}
           placeholder={assignment.suggestedFilename}
           aria-label={`Your filename for ${assignment.suggestedFilename}`}
           spellCheck={false}
@@ -314,9 +322,11 @@ function AssignmentRow({
         <SaveIndicator state={saveState} error={error} />
       </td>
       <td className="px-4 py-3">
-        {approved ? (
-          <span className="inline-flex rounded-full border border-[#4caf50]/60 bg-[#4caf50]/15 px-3 py-1 text-xs font-medium whitespace-nowrap text-[#7bd67f]">
-            Approved
+        {isLockedStatus(status) ? (
+          <span
+            className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap ${LOCKED_BADGE_STYLES[status]}`}
+          >
+            {ASSIGNMENT_STATUS_LABELS[status]}
           </span>
         ) : (
           <select
