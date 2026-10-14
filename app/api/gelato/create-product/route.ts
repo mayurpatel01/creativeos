@@ -1,12 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
-import { DESIGN_BUCKET } from "@/lib/design-storage";
 import { createProduct, GelatoError, productUrlFrom } from "@/lib/gelato/client";
+import { publishDesignImage } from "@/lib/gelato/public-image";
 import { getSupabaseAdmin } from "@/lib/supabase";
-
-// Gelato downloads the design from this URL. 24 hours leaves room for its
-// background processing.
-const SIGNED_URL_SECONDS = 24 * 60 * 60;
 
 export type CreateProductResponse =
   | { success: true; gelatoProductId: string; productUrl: string | null }
@@ -64,12 +60,14 @@ export async function POST(request: NextRequest) {
   const markError = () =>
     supabase.from("assets").update({ gelato_status: "error" }).eq("id", asset.id).is("gelato_product_id", null);
 
-  const { data: signed, error: signError } = await supabase.storage
-    .from(DESIGN_BUCKET)
-    .createSignedUrl(asset.file_path, SIGNED_URL_SECONDS);
-  if (signError || !signed) {
+  // Gelato needs a plain public URL: products created from signed URLs (with a
+  // ?token= query string) came back with no variants or images.
+  let imageUrl: string;
+  try {
+    imageUrl = await publishDesignImage(asset.file_path);
+  } catch (err) {
     await markError();
-    return fail(`Couldn't create an image URL: ${signError?.message ?? "unknown error"}`, 500);
+    return fail(err instanceof Error ? err.message : "Couldn't publish the design image.", 500);
   }
 
   let product;
@@ -77,7 +75,7 @@ export async function POST(request: NextRequest) {
     product = await createProduct({
       title: asset.name ?? asset.suggested_filename,
       description: `Design #${asset.design_number ?? "?"}: ${asset.name ?? asset.suggested_filename}`,
-      imageUrl: signed.signedUrl,
+      imageUrl,
       tags: Array.isArray(asset.tags) ? asset.tags : [],
     });
   } catch (err) {

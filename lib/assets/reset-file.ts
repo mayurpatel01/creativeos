@@ -1,4 +1,5 @@
 import { DESIGN_BUCKET } from "../design-storage";
+import { unpublishDesignImage } from "../gelato/public-image";
 import { getSupabaseAdmin } from "../supabase";
 
 export type ResetResult = { ok: true } | { ok: false; error: string; status: number };
@@ -28,6 +29,8 @@ export async function resetDesignFile(
     if (removeError) {
       return { ok: false, error: `Couldn't delete the image: ${removeError.message}`, status: 500 };
     }
+    // Drop the public copy too, if the design was ever sent to Gelato.
+    await unpublishDesignImage(asset.file_path);
   }
 
   const { data: updated, error: updateError } = await supabase

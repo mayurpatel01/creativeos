@@ -114,7 +114,8 @@ export function getTemplate(templateId: string = DEFAULT_TEMPLATE_ID): Promise<G
 export type CreateProductParams = {
   title: string;
   description?: string;
-  // Publicly reachable URL Gelato downloads the design from.
+  // Public URL Gelato downloads the design from. Must be a plain URL with no
+  // query string; see publishDesignImage in lib/gelato/public-image.ts.
   imageUrl: string;
   templateId?: string;
   tags?: string[];

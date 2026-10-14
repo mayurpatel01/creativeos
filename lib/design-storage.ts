@@ -18,3 +18,17 @@ function encodePath(path: string): string {
 export function designObjectUrl(supabaseUrl: string, path: string): string {
   return `${supabaseUrl}/storage/v1/object/${DESIGN_BUCKET}/${encodePath(path)}`;
 }
+
+// Public copies of designs for print partners (Gelato) that need a plain URL
+// they can download without a token. Only designs sent to Gelato are copied
+// here; the main bucket stays private.
+export const PUBLIC_DESIGN_BUCKET = "designs";
+
+// "designs/GANESH/x.png" in the private bucket → "GANESH/x.png" in the public one.
+export function publicDesignPath(filePath: string): string {
+  return filePath.replace(/^designs\//, "");
+}
+
+export function publicDesignUrl(supabaseUrl: string, filePath: string): string {
+  return `${supabaseUrl}/storage/v1/object/public/${PUBLIC_DESIGN_BUCKET}/${encodePath(publicDesignPath(filePath))}`;
+}
