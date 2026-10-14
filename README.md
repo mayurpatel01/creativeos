@@ -13,6 +13,8 @@ Set these in `.env.local`:
 | `OPENAI_API_KEY` | Kajol image generation agent |
 | `CLIPDROP_API_KEY` | Kajol background removal via Clipdrop (optional; without it images stay on white). Get a key at https://clipdrop.co/apis |
 | `ANTHROPIC_API_KEY` | Rani chat (`/rani`) |
+| `GELATO_API_KEY` | Gelato product creation |
+| `GELATO_STORE_ID` | Gelato store that products are created in |
 
 ## Getting Started
 

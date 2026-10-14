@@ -19,6 +19,7 @@ import {
   resetDesignForRegeneration,
   unassignDesigner,
 } from "./actions";
+import { BulkGelatoButton, GelatoButton, GelatoStatus } from "./gelato";
 import { ImageLightbox, Thumbnail } from "./thumbnails";
 
 export type AdminAsset = {
@@ -35,6 +36,9 @@ export type AdminAsset = {
   assignmentStatus: string | null;
   // Set when the design has an image in storage.
   filePath: string | null;
+  gelatoProductId: string | null;
+  gelatoProductUrl: string | null;
+  gelatoStatus: string | null;
 };
 
 type Collection = { id: string; name: string };
@@ -45,6 +49,7 @@ const STATUSES = [
   "dalle_done",
   "upscaled",
   "ready_for_review",
+  "gelato_pending",
   "approved",
   "rejected",
 ] as const;
@@ -59,6 +64,7 @@ const STATUS_STYLES: Record<string, string> = {
   dalle_done: "border-sky-800 bg-sky-950/60 text-sky-300",
   upscaled: "border-indigo-800 bg-indigo-950/60 text-indigo-300",
   ready_for_review: "border-violet-800 bg-violet-950/60 text-violet-300",
+  gelato_pending: "border-sky-800 bg-sky-950/60 text-sky-300",
   approved: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
   rejected: "border-red-900 bg-red-950/60 text-red-300",
 };
@@ -260,6 +266,9 @@ export function AdminDashboard({
             onChange={setDesignerFilter}
           />
           <ClearFiltersButton disabled={!filtersActive} onClick={clearFilters} />
+          <BulkGelatoButton
+            assetIds={assets.filter((a) => a.status === "dalle_done" && !a.gelatoProductId).map((a) => a.id)}
+          />
           <ResultCount shown={filtered.length} total={assets.length} />
         </section>
 
@@ -323,6 +332,15 @@ export function AdminDashboard({
                       <div className="flex items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
                         {asset.status === "dalle_done" && <RegenerateButton asset={asset} />}
+                        {asset.gelatoProductId ? (
+                          <GelatoStatus
+                            productId={asset.gelatoProductId}
+                            url={asset.gelatoProductUrl}
+                            status={asset.gelatoStatus}
+                          />
+                        ) : (
+                          asset.status === "dalle_done" && <GelatoButton assetId={asset.id} />
+                        )}
                         <button
                           type="button"
                           onClick={() => setAssigning(asset)}

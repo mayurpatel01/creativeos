@@ -67,7 +67,9 @@ async function AdminContent({
     await Promise.all([
       supabase
         .from("assets")
-        .select("id, design_number, suggested_filename, god, country, size_variant, status, collection_id, file_url, file_path, collections(name)")
+        // "*" rather than a column list so the page still loads before the Gelato
+        // migration adds the gelato_* columns.
+        .select("*, collections(name)")
         .eq("project_id", project.id)
         .order("design_number"),
       supabase
@@ -121,6 +123,9 @@ async function AdminContent({
       collectionName: collection?.name ?? "—",
       designer: assignmentByAsset.get(a.id)?.designer ?? null,
       assignmentStatus: assignmentByAsset.get(a.id)?.status ?? null,
+      gelatoProductId: a.gelato_product_id ?? null,
+      gelatoProductUrl: a.gelato_product_url ?? null,
+      gelatoStatus: a.gelato_status ?? null,
     };
   });
 
