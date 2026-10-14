@@ -12,6 +12,7 @@ import {
   SIZES,
   toOptions,
 } from "../../_components/filters";
+import { UploadButton } from "./upload-button";
 import { saveAssignmentStatus, saveDesignerFilename, type SaveResult } from "./actions";
 import {
   ASSIGNMENT_STATUSES,
@@ -25,6 +26,7 @@ import {
 
 export type DesignerAssignment = {
   id: string;
+  assetId: string;
   status: AssignmentStatus;
   designNumber: number | null;
   suggestedFilename: string;
@@ -35,6 +37,8 @@ export type DesignerAssignment = {
   collectionId: string | null;
   assetStatus: string | null;
   designerFilename: string;
+  fileUrl: string | null;
+  filePath: string | null;
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -171,13 +175,14 @@ export function DesignerPortal({
               <ResultCount shown={shown} total={assignments.length} />
             </section>
             <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
-              <table className="w-full min-w-[1080px] text-left text-sm">
+              <table className="w-full min-w-[1240px] text-left text-sm">
                 <thead className="bg-[#111] text-xs uppercase tracking-wider text-[#c9a84c]">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Design</th>
                     <th className="px-4 py-3 font-semibold">Suggested Filename</th>
                     <th className="px-4 py-3 font-semibold">DALL·E Prompt</th>
                     <th className="px-4 py-3 font-semibold">Your Filename</th>
+                    <th className="px-4 py-3 font-semibold">Design File</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -196,7 +201,7 @@ export function DesignerPortal({
                   ))}
                   {shown === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-neutral-500">
+                      <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
                         No designs match these filters.
                       </td>
                     </tr>
@@ -320,6 +325,18 @@ function AssignmentRow({
           className="w-full min-w-[200px] rounded-lg border border-neutral-700 bg-[#0a0a0a] px-3 py-2 font-mono text-xs text-white outline-none placeholder:text-neutral-600 focus:border-[#c9a84c] focus:ring-1 focus:ring-[#c9a84c] read-only:border-neutral-800 read-only:text-neutral-400 read-only:focus:border-neutral-800 read-only:focus:ring-0"
         />
         <SaveIndicator state={saveState} error={error} />
+      </td>
+      <td className="px-4 py-3">
+        <UploadButton
+          token={token}
+          assetId={assignment.assetId}
+          god={assignment.god}
+          suggestedFilename={assignment.suggestedFilename}
+          initialFilePath={assignment.filePath}
+          locked={isLockedStatus(status)}
+          // saveFileUrl already marked the assignment submitted on the server.
+          onUploaded={() => onStatusChange("submitted")}
+        />
       </td>
       <td className="px-4 py-3">
         {isLockedStatus(status) ? (
