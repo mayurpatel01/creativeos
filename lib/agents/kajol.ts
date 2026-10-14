@@ -34,9 +34,9 @@ export type KajolSummary = {
   generated: number;
   failed: number;
   errors: string[];
-  // Images kept on white because remove.bg failed.
+  // Images kept on white because Clipdrop failed.
   backgroundRemovalFailed: number;
-  // Images kept on white because REMOVE_BG_API_KEY isn't set.
+  // Images kept on white because CLIPDROP_API_KEY isn't set.
   backgroundRemovalSkipped: number;
   test?: boolean;
 };
@@ -136,61 +136,57 @@ function pngDimensions(buffer: Buffer): { width: number; height: number } {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
-const REMOVE_BG_URL = "https://api.remove.bg/v1.0/removebg";
-const REMOVE_BG_SIZE = "full";
-const REMOVE_BG_TIMEOUT_MS = 60_000;
+const CLIPDROP_URL = "https://clipdrop-api.co/remove-background/v1";
+const CLIPDROP_TIMEOUT_MS = 60_000;
 
 type RemovalResult =
   | { status: "removed"; png: Buffer }
   | { status: "skipped" | "failed" };
 
-// Second pass: strip the white background with remove.bg. Any failure keeps the
+// Second pass: strip the white background with Clipdrop. Any failure keeps the
 // white-background original so the run continues.
 async function removeBackground(png: Buffer, label: string): Promise<RemovalResult> {
-  const apiKey = process.env.REMOVE_BG_API_KEY;
+  const apiKey = process.env.CLIPDROP_API_KEY;
   if (!apiKey) {
-    log(`${label}: REMOVE_BG_API_KEY not set, keeping white background`);
+    log(`${label}: CLIPDROP_API_KEY not set, keeping white background`);
     return { status: "skipped" };
   }
 
-  log(`${label}: removing background with remove.bg`);
+  log(`${label}: removing background with Clipdrop`);
   const started = Date.now();
   try {
     const form = new FormData();
     form.append("image_file", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
-    form.append("size", REMOVE_BG_SIZE);
-    // Without this remove.bg may choose JPG, which can't hold transparency.
-    form.append("format", "png");
 
-    const response = await fetch(REMOVE_BG_URL, {
+    const response = await fetch(CLIPDROP_URL, {
       method: "POST",
-      headers: { "X-Api-Key": apiKey },
+      headers: { "x-api-key": apiKey },
       body: form,
-      signal: AbortSignal.timeout(REMOVE_BG_TIMEOUT_MS),
+      signal: AbortSignal.timeout(CLIPDROP_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      // remove.bg returns { errors: [{ title, detail }] } on failure.
+      // Clipdrop returns { error: "..." } on failure.
       const body = await response.json().catch(() => null);
-      const detail = body?.errors?.map((e: { title?: string; detail?: string }) => e.detail ?? e.title).join("; ");
-      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+      throw new Error(`HTTP ${response.status}${body?.error ? `: ${body.error}` : ""}`);
     }
 
+    // On success the body is the PNG itself.
     const result = Buffer.from(await response.arrayBuffer());
     if (!isPng(result)) throw new Error("response is not a PNG");
     if (!pngHasAlpha(result)) throw new Error("response has no transparency channel");
 
     const before = pngDimensions(png);
     const after = pngDimensions(result);
-    const credits = response.headers.get("x-credits-charged");
+    const remaining = response.headers.get("x-remaining-credits");
     log(
       `${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
-        `(${after.width}x${after.height}${credits ? `, ${credits} credit(s)` : ""})`,
+        `(${after.width}x${after.height}${remaining ? `, ${remaining} Clipdrop credits left` : ""})`,
     );
     if (after.width < before.width || after.height < before.height) {
       logError(
-        `${label}: remove.bg returned ${after.width}x${after.height}, smaller than the ` +
-          `${before.width}x${before.height} original (size "${REMOVE_BG_SIZE}")`,
+        `${label}: Clipdrop returned ${after.width}x${after.height}, smaller than the ` +
+          `${before.width}x${before.height} original`,
       );
     }
     return { status: "removed", png: result };
