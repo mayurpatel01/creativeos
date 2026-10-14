@@ -45,19 +45,30 @@ const COUNTRIES: Record<string, string> = {
   FIJ: "Fiji",
   MAU: "Mauritius",
   CAN: "Canada",
-  UK: "United Kingdom",
+  GBR: "United Kingdom",
   AUS: "Australia",
   SUR: "Suriname",
   RSA: "South Africa",
   TZA: "Tanzania",
   KEN: "Kenya",
+  ZMB: "Zambia",
+  NZL: "New Zealand",
+  NLD: "Netherlands",
+  MEX: "Mexico",
 };
 
-// Optional flag details added to the prompt. The original 10 countries were
-// seeded without them, so their prompts stay as they are.
+// Optional flag details added to the prompt for newly inserted designs. Existing
+// designs keep the prompts they were seeded with (the original 10 had none).
 const FLAG_DESCRIPTIONS: Record<string, string> = {
+  GBR: "red, white and blue Union Jack",
+  CAN: "red and white with a maple leaf",
+  SUR: "green, white and red horizontal stripes with a yellow star",
   TZA: "green, yellow and black diagonal stripe with blue triangles",
   KEN: "black, red and green horizontal stripes with a Maasai shield and spears",
+  ZMB: "green with red, black and orange vertical stripes and an eagle",
+  NZL: "blue with the Union Jack and four red Southern Cross stars",
+  NLD: "red, white and blue horizontal stripes",
+  MEX: "green, white and red vertical stripes with an eagle and serpent emblem",
 };
 
 // design_number has no database default; new designs continue from the highest.

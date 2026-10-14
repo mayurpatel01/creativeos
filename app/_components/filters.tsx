@@ -1,5 +1,22 @@
 export const GODS = ["GANESH", "SHIVA", "HANUMAN", "KRISHNA", "LAKSHMI", "DURGA", "OM"];
-export const COUNTRIES = ["IND", "GUY", "TRI", "FIJ", "MAU", "CAN", "UK", "AUS", "SUR", "RSA", "TZA", "KEN"];
+export const COUNTRIES = [
+  "IND",
+  "GUY",
+  "TRI",
+  "FIJ",
+  "MAU",
+  "CAN",
+  "GBR",
+  "AUS",
+  "SUR",
+  "RSA",
+  "TZA",
+  "KEN",
+  "ZMB",
+  "NZL",
+  "NLD",
+  "MEX",
+];
 export const SIZES = ["FULL", "CHEST"];
 
 export const ALL = "all";
