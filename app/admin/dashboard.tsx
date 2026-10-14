@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { assignAssetToDesigner } from "./actions";
+import { assignAssetToDesigner, unassignDesigner } from "./actions";
 
 export type AdminAsset = {
   id: string;
@@ -201,7 +201,10 @@ export function AdminDashboard({
                   </td>
                   <td className="px-4 py-2.5">
                     {asset.designer ? (
-                      asset.designer.name
+                      <div className="flex items-center gap-2">
+                        <span>{asset.designer.name}</span>
+                        <UnassignButton asset={asset} />
+                      </div>
                     ) : (
                       <span className="text-neutral-600">Unassigned</span>
                     )}
@@ -237,6 +240,38 @@ export function AdminDashboard({
         />
       )}
     </main>
+  );
+}
+
+function UnassignButton({ asset }: { asset: AdminAsset }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function unassign() {
+    if (!window.confirm(`Unassign ${asset.designer?.name} from ${asset.filename}?`)) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await unassignDesigner(asset.id);
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={unassign}
+        disabled={pending}
+        className="whitespace-nowrap rounded-md border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-400 transition hover:border-red-800 hover:text-red-300 disabled:opacity-50"
+      >
+        {pending ? "Unassigning…" : "Unassign"}
+      </button>
+      {error && (
+        <span role="alert" className="text-[11px] text-red-400">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 

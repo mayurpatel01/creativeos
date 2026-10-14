@@ -56,3 +56,20 @@ export async function assignAssetToDesigner(
   refresh();
   return { ok: true };
 }
+
+export async function unassignDesigner(assetId: string): Promise<AssignResult> {
+  if (!(await hasAdminCookie())) {
+    return { ok: false, error: "Your admin session has expired. Sign in again." };
+  }
+
+  const { error } = await getSupabaseAdmin()
+    .from("assignments")
+    .delete()
+    .eq("asset_id", assetId);
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  refresh();
+  return { ok: true };
+}
