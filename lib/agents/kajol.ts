@@ -1,4 +1,4 @@
-import OpenAI, { toFile } from "openai";
+import OpenAI from "openai";
 import { DESIGN_BUCKET, designObjectUrl, designStoragePath } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 import { getSupabaseAdmin } from "../supabase";
@@ -30,15 +30,14 @@ function withWhiteBackground(prompt: string): string {
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-const BACKGROUND_REMOVAL_PROMPT =
-  "Remove the background completely, make it fully transparent. Keep all details of the central design exactly as they are.";
-
 export type KajolSummary = {
   generated: number;
   failed: number;
   errors: string[];
-  // Images kept on white because background removal failed.
+  // Images kept on white because remove.bg failed.
   backgroundRemovalFailed: number;
+  // Images kept on white because REMOVE_BG_API_KEY isn't set.
+  backgroundRemovalSkipped: number;
   test?: boolean;
 };
 
@@ -132,41 +131,79 @@ function pngHasAlpha(buffer: Buffer): boolean {
   return colorType === 4 || colorType === 6 || (colorType === 3 && buffer.includes("tRNS"));
 }
 
-// Second pass: ask the edits endpoint to strip the white background. Returns null
-// on any failure so the caller keeps the white-background original.
-async function removeBackground(png: Buffer, label: string): Promise<Buffer | null> {
-  log(`${label}: removing background`);
+// Width and height from the PNG IHDR header.
+function pngDimensions(buffer: Buffer): { width: number; height: number } {
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+const REMOVE_BG_URL = "https://api.remove.bg/v1.0/removebg";
+const REMOVE_BG_SIZE = "regular";
+const REMOVE_BG_TIMEOUT_MS = 60_000;
+
+type RemovalResult =
+  | { status: "removed"; png: Buffer }
+  | { status: "skipped" | "failed" };
+
+// Second pass: strip the white background with remove.bg. Any failure keeps the
+// white-background original so the run continues.
+async function removeBackground(png: Buffer, label: string): Promise<RemovalResult> {
+  const apiKey = process.env.REMOVE_BG_API_KEY;
+  if (!apiKey) {
+    log(`${label}: REMOVE_BG_API_KEY not set, keeping white background`);
+    return { status: "skipped" };
+  }
+
+  log(`${label}: removing background with remove.bg`);
   const started = Date.now();
   try {
-    const response = await getOpenAI().images.edit({
-      model: IMAGE_MODEL,
-      image: await toFile(png, "design.png", { type: "image/png" }),
-      prompt: BACKGROUND_REMOVAL_PROMPT,
-      n: 1,
-      size: IMAGE_SIZE,
-      // Without these the edit may come back opaque; transparency needs PNG or WebP.
-      background: "transparent",
-      output_format: "png",
+    const form = new FormData();
+    form.append("image_file", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
+    form.append("size", REMOVE_BG_SIZE);
+    // Without this remove.bg may choose JPG, which can't hold transparency.
+    form.append("format", "png");
+
+    const response = await fetch(REMOVE_BG_URL, {
+      method: "POST",
+      headers: { "X-Api-Key": apiKey },
+      body: form,
+      signal: AbortSignal.timeout(REMOVE_BG_TIMEOUT_MS),
     });
 
-    const b64 = response.data?.[0]?.b64_json;
-    if (!b64) throw new Error("edit returned no image data");
-    const edited = Buffer.from(b64, "base64");
-    if (!isPng(edited)) throw new Error("edit result is not a PNG");
-    if (!pngHasAlpha(edited)) throw new Error("edit result has no transparency channel");
+    if (!response.ok) {
+      // remove.bg returns { errors: [{ title, detail }] } on failure.
+      const body = await response.json().catch(() => null);
+      const detail = body?.errors?.map((e: { title?: string; detail?: string }) => e.detail ?? e.title).join("; ");
+      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
 
-    log(`${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    return edited;
+    const result = Buffer.from(await response.arrayBuffer());
+    if (!isPng(result)) throw new Error("response is not a PNG");
+    if (!pngHasAlpha(result)) throw new Error("response has no transparency channel");
+
+    const before = pngDimensions(png);
+    const after = pngDimensions(result);
+    const credits = response.headers.get("x-credits-charged");
+    log(
+      `${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+        `(${after.width}x${after.height}${credits ? `, ${credits} credit(s)` : ""})`,
+    );
+    if (after.width < before.width || after.height < before.height) {
+      logError(
+        `${label}: remove.bg returned ${after.width}x${after.height}, smaller than the ` +
+          `${before.width}x${before.height} original (size "${REMOVE_BG_SIZE}")`,
+      );
+    }
+    return { status: "removed", png: result };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logError(`${label}: background removal failed, keeping white background: ${message}`);
-    return null;
+    return { status: "failed" };
   }
 }
 
 async function processAsset(
   asset: PendingAsset,
-): Promise<{ filePath: string; fileUrl: string; backgroundRemoved: boolean }> {
+): Promise<{ filePath: string; fileUrl: string; backgroundRemoval: RemovalResult["status"] }> {
   const supabase = getSupabaseAdmin();
   const label = `#${asset.design_number ?? "?"} ${asset.suggested_filename}`;
   const filePath = designStoragePath(asset.god, asset.suggested_filename);
@@ -180,8 +217,9 @@ async function processAsset(
     throw new Error("Generated file is not a PNG");
   }
 
-  const transparent = await removeBackground(generated, label);
-  const png = transparent ?? generated;
+  const removal = await removeBackground(generated, label);
+  const png = removal.status === "removed" ? removal.png : generated;
+  const { width, height } = pngDimensions(png);
 
   log(`${label}: uploading to ${DESIGN_BUCKET}/${filePath}`);
   // upsert: false so Kajol never overwrites a file a designer has already uploaded.
@@ -201,8 +239,8 @@ async function processAsset(
       file_url: fileUrl,
       file_path: filePath,
       file_type: "image/png",
-      resolution_width: 1024,
-      resolution_height: 1024,
+      resolution_width: width,
+      resolution_height: height,
       updated_at: new Date().toISOString(),
     })
     .eq("id", asset.id)
@@ -220,7 +258,7 @@ async function processAsset(
   }
 
   log(`${label}: done`);
-  return { filePath, fileUrl, backgroundRemoved: transparent !== null };
+  return { filePath, fileUrl, backgroundRemoval: removal.status };
 }
 
 async function signedUrlFor(filePath: string): Promise<string | undefined> {
@@ -254,6 +292,7 @@ export async function runKajol(
     failed: 0,
     errors: [],
     backgroundRemovalFailed: 0,
+    backgroundRemovalSkipped: 0,
     ...(test && { test: true }),
   };
   const images: KajolImage[] = [];
@@ -295,9 +334,10 @@ export async function runKajol(
     // One at a time to stay within OpenAI rate limits.
     for (const asset of assets as PendingAsset[]) {
       try {
-        const { filePath, fileUrl, backgroundRemoved } = await processAsset(asset);
+        const { filePath, fileUrl, backgroundRemoval } = await processAsset(asset);
         summary.generated++;
-        if (!backgroundRemoved) summary.backgroundRemovalFailed++;
+        if (backgroundRemoval === "failed") summary.backgroundRemovalFailed++;
+        if (backgroundRemoval === "skipped") summary.backgroundRemovalSkipped++;
         images.push({
           designNumber: asset.design_number,
           filename: asset.suggested_filename,

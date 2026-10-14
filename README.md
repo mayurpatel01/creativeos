@@ -11,6 +11,7 @@ Set these in `.env.local`:
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side admin client (never exposed to the browser) |
 | `ADMIN_KEY` | Admin login, `/api/agents/*` routes |
 | `OPENAI_API_KEY` | Kajol image generation agent |
+| `REMOVE_BG_API_KEY` | Kajol background removal (optional; without it images stay on white) |
 | `ANTHROPIC_API_KEY` | Rani chat (`/rani`) |
 
 ## Getting Started
