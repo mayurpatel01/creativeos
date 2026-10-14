@@ -13,7 +13,13 @@ import {
   SIZES,
   toOptions,
 } from "../_components/filters";
-import { approveDesign, assignAssetToDesigner, unassignDesigner } from "./actions";
+import {
+  approveDesign,
+  assignAssetToDesigner,
+  resetDesignForRegeneration,
+  unassignDesigner,
+} from "./actions";
+import { ImageLightbox, Thumbnail } from "./thumbnails";
 
 export type AdminAsset = {
   id: string;
@@ -27,6 +33,8 @@ export type AdminAsset = {
   collectionName: string;
   designer: { id: string; name: string } | null;
   assignmentStatus: string | null;
+  // Set when the design has an image in storage.
+  filePath: string | null;
 };
 
 type Collection = { id: string; name: string };
@@ -97,6 +105,7 @@ export function AdminDashboard({
   const [collectionFilter, setCollectionFilter] = useState(ALL);
   const [designerFilter, setDesignerFilter] = useState(ALL);
   const [assigning, setAssigning] = useState<AdminAsset | null>(null);
+  const [preview, setPreview] = useState<{ asset: AdminAsset; url: string } | null>(null);
 
   const stats = useMemo(() => {
     const count = (status: string) => assets.filter((a) => a.status === status).length;
@@ -255,9 +264,10 @@ export function AdminDashboard({
         </section>
 
         <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
-          <table className="w-full min-w-[1040px] text-left text-sm">
+          <table className="w-full min-w-[1140px] text-left text-sm">
             <thead className="bg-[#111] text-xs uppercase tracking-wider text-[#c9a84c]">
               <tr>
+                <th className="px-4 py-3 font-semibold">Preview</th>
                 <th className="px-4 py-3 font-semibold">Design ID</th>
                 <th className="px-4 py-3 font-semibold">Filename</th>
                 <th className="px-4 py-3 font-semibold">God</th>
@@ -272,6 +282,19 @@ export function AdminDashboard({
             <tbody className="divide-y divide-neutral-800/80">
               {filtered.map((asset) => (
                 <tr key={asset.id} className="hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    {asset.filePath ? (
+                      <Thumbnail
+                        filePath={asset.filePath}
+                        alt={asset.filename}
+                        onOpen={(url) => setPreview({ asset, url })}
+                      />
+                    ) : (
+                      <span className="flex h-16 w-16 items-center justify-center rounded-md border border-dashed border-neutral-800 text-neutral-700">
+                        —
+                      </span>
+                    )}
+                  </td>
                   <td className="max-w-[200px] px-4 py-2.5">
                     <DesignId designNumber={asset.designNumber} suggestedFilename={asset.filename} />
                   </td>
@@ -299,6 +322,7 @@ export function AdminDashboard({
                     {asset.status !== "approved" && (
                       <div className="flex items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
+                        {asset.status === "dalle_done" && <RegenerateButton asset={asset} />}
                         <button
                           type="button"
                           onClick={() => setAssigning(asset)}
@@ -313,7 +337,7 @@ export function AdminDashboard({
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-500">
+                  <td colSpan={10} className="px-4 py-12 text-center text-neutral-500">
                     No designs match these filters.
                   </td>
                 </tr>
@@ -323,6 +347,15 @@ export function AdminDashboard({
         </div>
       </div>
 
+      {preview && (
+        <ImageLightbox
+          url={preview.url}
+          designNumber={preview.asset.designNumber}
+          filename={preview.asset.filename}
+          onClose={() => setPreview(null)}
+        />
+      )}
+
       {assigning && (
         <AssignModal
           asset={assigning}
@@ -331,6 +364,45 @@ export function AdminDashboard({
         />
       )}
     </main>
+  );
+}
+
+function RegenerateButton({ asset }: { asset: AdminAsset }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function regenerate() {
+    const label = asset.designNumber === null ? asset.filename : `#${asset.designNumber}`;
+    if (
+      !window.confirm(
+        `Regenerate ${label}? This deletes the current image and sends the design back to not_started for Kajol's next run.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await resetDesignForRegeneration(asset.id);
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  return (
+    <>
+      {error && (
+        <span role="alert" className="text-[11px] text-red-400">
+          {error}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={regenerate}
+        disabled={pending}
+        className="whitespace-nowrap rounded-md border border-neutral-600 px-3 py-1 text-xs font-medium text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c] disabled:opacity-50"
+      >
+        {pending ? "Resetting…" : "Regenerate"}
+      </button>
+    </>
   );
 }
 
