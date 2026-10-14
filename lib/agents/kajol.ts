@@ -16,8 +16,16 @@ const TEST_SIGNED_URL_SECONDS = 60 * 60;
 const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_SIZE = "1024x1024";
 const IMAGE_QUALITY = "medium"; // GPT image models have no "standard"; medium is the closest.
-// Transparent backgrounds are in preview for gpt-image-2. Switch to "auto" if requests fail.
-const IMAGE_BACKGROUND = "transparent";
+// The API has no "white" option: opaque plus a white-background prompt gives white.
+// Transparency is handled later by removing the white in post-processing.
+const IMAGE_BACKGROUND = "opaque";
+
+// Stored prompts ask for a transparent background, which contradicts an opaque
+// render, so swap that phrase at generation time. The database is left as is.
+function withWhiteBackground(prompt: string): string {
+  const swapped = prompt.replace(/transparent background/gi, "plain solid white background");
+  return swapped === prompt ? `${prompt} Plain solid white background.` : swapped;
+}
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -82,7 +90,7 @@ type PendingAsset = {
 async function generateImage(prompt: string): Promise<Buffer> {
   const response = await getOpenAI().images.generate({
     model: IMAGE_MODEL,
-    prompt,
+    prompt: withWhiteBackground(prompt),
     size: IMAGE_SIZE,
     quality: IMAGE_QUALITY,
     background: IMAGE_BACKGROUND,
