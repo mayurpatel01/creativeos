@@ -7,7 +7,8 @@ import { getSupabaseAdmin } from "../supabase";
 
 const AGENT = "Kajol";
 const PROJECT_SLUG = "hindu-tees";
-const BATCH_SIZE = 10;
+// One design per run while generation + background removal is being tuned.
+const BATCH_SIZE = 1;
 const TEST_BATCH_SIZE = 1;
 // How long the test-run link to the private image stays valid.
 const TEST_SIGNED_URL_SECONDS = 60 * 60;

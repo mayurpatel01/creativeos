@@ -208,7 +208,7 @@ function KajolCard({ card }: { card: AgentCardData }) {
     const confirmText =
       mode === "test"
         ? "Run Kajol on 1 image as a test? This will spend ~1 OpenAI credit."
-        : "Run Kajol now? She'll generate up to 10 images with OpenAI, which uses paid credits.";
+        : "Run Kajol now? She'll generate 1 image with OpenAI, which uses paid credits.";
     if (!window.confirm(confirmText)) return;
 
     setRunning(true);

@@ -12,7 +12,7 @@ export const AGENTS: AgentInfo[] = [
   {
     name: "Kajol",
     role: "Image Generation",
-    description: "Turns not-started designs' prompts into artwork and uploads it to storage, 10 per run.",
+    description: "Turns not-started designs' prompts into artwork and uploads it to storage, 1 per run.",
     runnable: true,
   },
   {

@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
 import { KajolBusyError, runKajol, type KajolLogLine, type KajolResult } from "@/lib/agents/kajol";
 
-// Up to 10 images generated one after another can take several minutes.
-export const maxDuration = 300;
+// Generation plus background removal can take a few minutes.
+export const maxDuration = 300; // 5 minutes
 
 // ?test=1 generates a single image and includes a temporary link to view it.
 // Streamed one JSON object per line when called with ?stream=1.
