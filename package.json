@@ -10,6 +10,7 @@
     "seed:assets": "node --env-file=.env.local scripts/seed-assets.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@supabase/supabase-js": "^2.117.3",
     "next": "16.4.0",
     "openai": "^7.33.0",

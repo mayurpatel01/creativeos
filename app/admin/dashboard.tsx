@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { DesignId } from "../_components/design-id";
 import {
@@ -153,11 +154,25 @@ export function AdminDashboard({
   return (
     <main className="min-h-screen flex-1 bg-[#0a0a0a] text-neutral-200">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a84c]">
-            CreativeOS Admin
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold text-white">{projectName}</h1>
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a84c]">
+              CreativeOS Admin
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold text-white">{projectName}</h1>
+          </div>
+          <Link
+            href="/rani"
+            className="flex items-center gap-2 rounded-lg border border-[#c9a84c]/50 px-3 py-2 text-sm font-medium text-[#c9a84c] transition hover:bg-[#c9a84c] hover:text-[#0a0a0a]"
+          >
+            <span
+              aria-hidden
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-[#c9a84c] text-[11px] font-semibold text-[#0a0a0a]"
+            >
+              R
+            </span>
+            Ask Rani
+          </Link>
         </header>
 
         <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">

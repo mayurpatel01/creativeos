@@ -1,5 +1,18 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Environment variables
+
+Set these in `.env.local`:
+
+| Variable | Used by |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase client (browser and server) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser uploads from the designer portal |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side admin client (never exposed to the browser) |
+| `ADMIN_KEY` | Admin login, `/api/agents/*` routes |
+| `OPENAI_API_KEY` | Kajol image generation agent |
+| `ANTHROPIC_API_KEY` | Rani chat (`/rani`) |
+
 ## Getting Started
 
 First, run the development server:
