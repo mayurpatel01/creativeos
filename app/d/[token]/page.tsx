@@ -47,7 +47,7 @@ async function DesignerContent({ params }: { params: PageProps<"/d/[token]">["pa
   const { data, error } = await supabase
     .from("assignments")
     .select(
-      "id, status, assets(suggested_filename, dalle_prompt, god, country, size_variant, collection_id, status, designer_filename)",
+      "id, status, assets(design_number, suggested_filename, dalle_prompt, god, country, size_variant, collection_id, status, designer_filename)",
     )
     .eq("designer_id", designer.id);
   if (error) throw new Error(error.message);
@@ -61,6 +61,7 @@ async function DesignerContent({ params }: { params: PageProps<"/d/[token]">["pa
       return {
         id: row.id,
         status,
+        designNumber: asset?.design_number ?? null,
         suggestedFilename: asset?.suggested_filename ?? "",
         dallePrompt: asset?.dalle_prompt ?? "",
         god: asset?.god ?? null,
@@ -71,7 +72,11 @@ async function DesignerContent({ params }: { params: PageProps<"/d/[token]">["pa
         designerFilename: asset?.designer_filename ?? "",
       };
     })
-    .sort((a, b) => a.suggestedFilename.localeCompare(b.suggestedFilename));
+    .sort(
+      (a, b) =>
+        (a.designNumber ?? Infinity) - (b.designNumber ?? Infinity) ||
+        a.suggestedFilename.localeCompare(b.suggestedFilename),
+    );
 
   return <DesignerPortal token={token} designerName={designer.name} assignments={assignments} />;
 }

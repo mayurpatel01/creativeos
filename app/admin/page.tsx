@@ -67,9 +67,9 @@ async function AdminContent({
     await Promise.all([
       supabase
         .from("assets")
-        .select("id, suggested_filename, god, country, size_variant, status, collection_id, collections(name)")
+        .select("id, design_number, suggested_filename, god, country, size_variant, status, collection_id, collections(name)")
         .eq("project_id", project.id)
-        .order("suggested_filename"),
+        .order("design_number"),
       supabase
         .from("collections")
         .select("id, name")
@@ -104,6 +104,7 @@ async function AdminContent({
     const collection = Array.isArray(a.collections) ? a.collections[0] : a.collections;
     return {
       id: a.id,
+      designNumber: a.design_number ?? null,
       filename: a.suggested_filename ?? "—",
       god: a.god,
       country: a.country,

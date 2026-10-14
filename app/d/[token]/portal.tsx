@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { DesignId } from "../../_components/design-id";
 import { saveAssignmentStatus, saveDesignerFilename, type SaveResult } from "./actions";
 import {
   ASSIGNMENT_STATUSES,
@@ -11,6 +12,7 @@ import {
 export type DesignerAssignment = {
   id: string;
   status: AssignmentStatus;
+  designNumber: number | null;
   suggestedFilename: string;
   dallePrompt: string;
   god: string | null;
@@ -198,6 +200,12 @@ function AssignmentRow({
         {assignment.suggestedFilename}
       </td>
       <td className="w-[38%] px-4 py-3">
+        <div className="mb-2">
+          <DesignId
+            designNumber={assignment.designNumber}
+            suggestedFilename={assignment.suggestedFilename}
+          />
+        </div>
         <div className="max-h-28 overflow-y-auto rounded-lg border border-neutral-800 bg-[#0a0a0a] p-2.5 text-xs leading-relaxed text-neutral-300">
           {assignment.dallePrompt || <span className="text-neutral-600">No prompt</span>}
         </div>

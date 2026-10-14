@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { DesignId } from "../_components/design-id";
 import { assignAssetToDesigner, unassignDesigner } from "./actions";
 
 export type AdminAsset = {
   id: string;
+  designNumber: number | null;
   filename: string;
   god: string | null;
   country: string | null;
@@ -173,9 +175,10 @@ export function AdminDashboard({
         </section>
 
         <div className="mt-4 overflow-x-auto rounded-xl border border-neutral-800">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[1040px] text-left text-sm">
             <thead className="bg-[#111] text-xs uppercase tracking-wider text-[#c9a84c]">
               <tr>
+                <th className="px-4 py-3 font-semibold">Design ID</th>
                 <th className="px-4 py-3 font-semibold">Filename</th>
                 <th className="px-4 py-3 font-semibold">God</th>
                 <th className="px-4 py-3 font-semibold">Country</th>
@@ -189,6 +192,9 @@ export function AdminDashboard({
             <tbody className="divide-y divide-neutral-800/80">
               {filtered.map((asset) => (
                 <tr key={asset.id} className="hover:bg-white/[0.02]">
+                  <td className="max-w-[200px] px-4 py-2.5">
+                    <DesignId designNumber={asset.designNumber} suggestedFilename={asset.filename} />
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-neutral-300">
                     {asset.filename}
                   </td>
@@ -222,7 +228,7 @@ export function AdminDashboard({
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-neutral-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-500">
                     No designs match these filters.
                   </td>
                 </tr>
