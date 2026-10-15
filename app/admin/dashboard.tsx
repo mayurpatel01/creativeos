@@ -67,17 +67,21 @@ const UNASSIGNED_FILTER = "unassigned";
 
 const STATUS_STYLES: Record<string, string> = {
   not_started: "border-neutral-700 bg-neutral-800/60 text-neutral-300",
-  dalle_done: "border-sky-800 bg-sky-950/60 text-sky-300",
+  dalle_done: "border-blue-800 bg-blue-950/60 text-blue-300",
   upscaled: "border-indigo-800 bg-indigo-950/60 text-indigo-300",
   ready_for_review: "border-violet-800 bg-violet-950/60 text-violet-300",
-  gelato_pending: "border-sky-800 bg-sky-950/60 text-sky-300",
-  gelato_done: "border-teal-800 bg-teal-950/60 text-teal-300",
+  gelato_pending: "border-amber-700 bg-amber-950/60 text-amber-300",
+  gelato_done: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
   approved: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
   rejected: "border-red-900 bg-red-950/60 text-red-300",
 };
 
+// Readable names for the pipeline statuses; others are title-cased.
 const STATUS_LABELS: Record<string, string> = {
-  dalle_done: "DALL·E Done",
+  not_started: "Queued",
+  dalle_done: "Ready",
+  gelato_pending: "Pending",
+  gelato_done: "Live",
 };
 
 function formatStatus(status: string) {
@@ -313,7 +317,7 @@ export function AdminDashboard({
                 <th className="px-4 py-3 font-semibold">Collection</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Designer</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/80">
