@@ -19,7 +19,7 @@ import {
   resetDesignForRegeneration,
   unassignDesigner,
 } from "./actions";
-import { BulkGelatoButton, GelatoButton, GelatoStatus } from "./gelato";
+import { BulkGelatoButton, GelatoButton, GelatoStatus, SyncGelatoStatusButton } from "./gelato";
 import { ImageLightbox, Thumbnail } from "./thumbnails";
 
 export type AdminAsset = {
@@ -50,6 +50,7 @@ const STATUSES = [
   "upscaled",
   "ready_for_review",
   "gelato_pending",
+  "gelato_done",
   "approved",
   "rejected",
 ] as const;
@@ -65,6 +66,7 @@ const STATUS_STYLES: Record<string, string> = {
   upscaled: "border-indigo-800 bg-indigo-950/60 text-indigo-300",
   ready_for_review: "border-violet-800 bg-violet-950/60 text-violet-300",
   gelato_pending: "border-sky-800 bg-sky-950/60 text-sky-300",
+  gelato_done: "border-teal-800 bg-teal-950/60 text-teal-300",
   approved: "border-[#4caf50]/60 bg-[#4caf50]/15 text-[#7bd67f]",
   rejected: "border-red-900 bg-red-950/60 text-red-300",
 };
@@ -275,6 +277,7 @@ export function AdminDashboard({
           <BulkGelatoButton
             assetIds={assets.filter((a) => a.status === "dalle_done" && !a.gelatoProductId).map((a) => a.id)}
           />
+          <SyncGelatoStatusButton />
           <ResultCount shown={filtered.length} total={assets.length} />
         </section>
 
@@ -339,7 +342,17 @@ export function AdminDashboard({
                       <div className="ml-auto flex max-w-[230px] flex-wrap items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
                         {(asset.filePath || asset.status === "dalle_done") && <RegenerateButton asset={asset} />}
-                        {asset.gelatoProductId ? (
+                        {asset.gelatoStatus === "error" ? (
+                          // Failed on Gelato, or never got there: say so, and offer it again.
+                          <>
+                            <GelatoStatus
+                              productId={asset.gelatoProductId}
+                              url={asset.gelatoProductUrl}
+                              status={asset.gelatoStatus}
+                            />
+                            <GelatoButton assetId={asset.id} retry />
+                          </>
+                        ) : asset.gelatoProductId ? (
                           <GelatoStatus
                             productId={asset.gelatoProductId}
                             url={asset.gelatoProductUrl}

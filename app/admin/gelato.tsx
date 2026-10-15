@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { CreateProductResponse } from "../api/gelato/create-product/route";
+import type { SyncStatusResponse } from "../api/gelato/sync-status/route";
 
 async function sendToGelato(assetId: string): Promise<CreateProductResponse> {
   try {
@@ -45,15 +46,16 @@ export function GelatoStatus({
   url,
   status,
 }: {
-  productId: string;
+  productId: string | null;
   url: string | null;
   status: string | null;
 }) {
   if (status === "error") return <span className="text-xs text-red-300">Gelato error</span>;
+  if (!productId) return null;
   return <ProductLink productId={productId} url={url} />;
 }
 
-export function GelatoButton({ assetId }: { assetId: string }) {
+export function GelatoButton({ assetId, retry = false }: { assetId: string; retry?: boolean }) {
   const router = useRouter();
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [result, setResult] = useState<{ productId: string; url: string | null } | null>(null);
@@ -88,9 +90,65 @@ export function GelatoButton({ assetId }: { assetId: string }) {
         disabled={state === "sending"}
         className="whitespace-nowrap rounded-md border border-sky-800 px-3 py-1 text-xs font-medium text-sky-300 transition hover:bg-sky-950/60 disabled:opacity-50"
       >
-        {state === "sending" ? "Sending…" : "→ Gelato"}
+        {state === "sending" ? "Sending…" : retry ? "Retry Gelato" : "→ Gelato"}
       </button>
     </>
+  );
+}
+
+// Asks Gelato about every product still pending and marks the finished ones active.
+export function SyncGelatoStatusButton() {
+  const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState<{ tone: "done" | "error"; text: string } | null>(null);
+
+  async function sync() {
+    setSyncing(true);
+    setMessage(null);
+    let body: SyncStatusResponse | null = null;
+    let httpStatus = 0;
+    try {
+      const res = await fetch("/api/gelato/sync-status", { method: "POST" });
+      httpStatus = res.status;
+      body = (await res.json().catch(() => null)) as SyncStatusResponse | null;
+    } catch {
+      setMessage({ tone: "error", text: "Couldn't reach the server." });
+      setSyncing(false);
+      return;
+    }
+
+    if (body && "synced" in body) {
+      const parts = [`${body.synced} updated to active`];
+      if (body.failed) parts.push(`${body.failed} failed on Gelato — retry from the table`);
+      if (body.stillPending) parts.push(`${body.stillPending} still pending`);
+      const text = `${parts.join(", ")}.${body.warning ? ` ${body.warning}` : ""}`;
+      setMessage({ tone: body.failed ? "error" : "done", text });
+      if (body.synced || body.failed) router.refresh();
+    } else {
+      setMessage({ tone: "error", text: body?.error ?? `Sync failed (HTTP ${httpStatus}).` });
+    }
+    setSyncing(false);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={sync}
+        disabled={syncing}
+        className="rounded-lg border border-sky-800 px-3 py-2 text-sm font-medium text-sky-300 transition hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {syncing ? "Syncing…" : "Sync Gelato Status"}
+      </button>
+      {message && (
+        <span
+          role={message.tone === "error" ? "alert" : "status"}
+          className={`text-sm ${message.tone === "done" ? "text-[#7bd67f]" : "text-red-300"}`}
+        >
+          {message.text}
+        </span>
+      )}
+    </div>
   );
 }
 
