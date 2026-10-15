@@ -81,7 +81,57 @@ export function storeId(): string {
   return id;
 }
 
-async function gelatoFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Gelato doesn't publish rate limits or send rate-limit headers (checked
+// 2026-10-15); throttling comes back as HTTP 429. So calls are spaced out, any
+// standard rate-limit headers Gelato adds later are watched, and a 429 is
+// retried once.
+const MIN_CALL_INTERVAL_MS = 500;
+const RATE_LIMIT_WARN_FRACTION = 0.2;
+const DEFAULT_RETRY_AFTER_MS = 2_000;
+const MAX_RETRY_AFTER_MS = 30_000;
+
+// Next time a call may start. Shared by every Gelato call in this server
+// process, so bulk approvals, the review queue and status sync all queue
+// behind each other at least MIN_CALL_INTERVAL_MS apart.
+let nextCallAt = 0;
+
+async function waitForCallSlot(): Promise<void> {
+  const now = Date.now();
+  const slot = Math.max(now, nextCallAt);
+  nextCallAt = slot + MIN_CALL_INTERVAL_MS;
+  if (slot > now) await new Promise((resolve) => setTimeout(resolve, slot - now));
+}
+
+// Warns when standard rate-limit headers (if Gelato ever sends them) show
+// little allowance left.
+function checkRateLimitHeaders(response: Response, path: string): void {
+  const read = (...names: string[]) => {
+    for (const name of names) {
+      const value = Number(response.headers.get(name));
+      if (response.headers.has(name) && Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+  const remaining = read("x-ratelimit-remaining", "ratelimit-remaining", "x-rate-limit-remaining");
+  const limit = read("x-ratelimit-limit", "ratelimit-limit", "x-rate-limit-limit");
+  if (remaining === null) return;
+  if (remaining <= 0 || (limit && remaining / limit < RATE_LIMIT_WARN_FRACTION)) {
+    console.warn(
+      `[gelato] rate limit close: ${remaining}${limit ? ` of ${limit}` : ""} requests left (${path})`,
+    );
+  }
+}
+
+function retryAfterMs(response: Response): number {
+  const header = response.headers.get("retry-after");
+  if (!header) return DEFAULT_RETRY_AFTER_MS;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+  return Math.min(Math.max(ms, 0) || DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS);
+}
+
+async function gelatoFetch<T>(path: string, init: RequestInit = {}, attempt = 1): Promise<T> {
+  await waitForCallSlot();
   const response = await fetch(`${GELATO_ECOMMERCE_URL}${path}`, {
     ...init,
     headers: {
@@ -91,6 +141,17 @@ async function gelatoFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
     },
     signal: init.signal ?? AbortSignal.timeout(60_000),
   });
+  checkRateLimitHeaders(response, path);
+
+  // Throttled: the request wasn't processed, so one retry is safe even for POSTs.
+  if (response.status === 429 && attempt === 1) {
+    const wait = retryAfterMs(response);
+    console.warn(`[gelato] rate limited (429) on ${init.method ?? "GET"} ${path}; retrying in ${wait} ms`);
+    await response.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    nextCallAt = Math.max(nextCallAt, Date.now() + MIN_CALL_INTERVAL_MS);
+    return gelatoFetch<T>(path, init, attempt + 1);
+  }
 
   const text = await response.text();
   let body: unknown = null;
@@ -101,6 +162,9 @@ async function gelatoFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
   }
 
   if (!response.ok) {
+    if (response.status === 429) {
+      console.warn(`[gelato] still rate limited (429) on ${init.method ?? "GET"} ${path} after retrying`);
+    }
     const message =
       (body as { message?: string } | null)?.message ?? (typeof body === "string" ? body : "") ?? "";
     throw new GelatoError(`Gelato API ${response.status}${message ? `: ${message}` : ""}`, response.status, body);
