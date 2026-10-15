@@ -142,7 +142,7 @@ function pngDimensions(buffer: Buffer): { width: number; height: number } {
 // it's slower than the rest.
 const BACKGROUND_REMOVAL_MODEL = "medium";
 
-const OPAQUE_ALPHA_THRESHOLD = 250;
+const OPAQUE_ALPHA_THRESHOLD = 200;
 
 type RemovalResult = { status: "removed"; png: Buffer } | { status: "failed" };
 
@@ -164,8 +164,9 @@ async function removeBackground(png: Buffer, label: string): Promise<RemovalResu
     if (pixels.length !== before.width * before.height * 4) {
       throw new Error(`expected ${before.width}x${before.height} RGBA pixels, got ${pixels.length} bytes`);
     }
-    // The model's mask tops out at 254, so solid areas would be very slightly
-    // see-through. Snap near-opaque pixels to fully opaque for printing.
+    // The model's mask tops out at 254, and edges of solid artwork come out
+    // partly see-through. Snap mostly-opaque pixels (alpha 200+) to fully
+    // opaque for printing.
     for (let i = 3; i < pixels.length; i += 4) {
       if (pixels[i] >= OPAQUE_ALPHA_THRESHOLD) pixels[i] = 255;
     }
