@@ -63,6 +63,9 @@ const APPROVED_STATUSES: string[] = ["gelato_pending", "gelato_done"];
 const APPROVED_FILTER = "approved_any";
 // Gelato reports the product active (synced by "Sync Gelato Status").
 const LIVE_FILTER = "live_in_gelato";
+// Variants each Gelato product gets from the template (2 colors × 5 sizes).
+// Update as color variants are added to the template.
+const GELATO_VARIANTS_PER_PRODUCT = 10;
 const UNASSIGNED_FILTER = "unassigned";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -124,7 +127,7 @@ export function AdminDashboard({
   const [assigning, setAssigning] = useState<AdminAsset | null>(null);
   const [preview, setPreview] = useState<{ asset: AdminAsset; url: string } | null>(null);
 
-  const stats = useMemo(() => {
+  const stats = useMemo((): Array<{ label: string; value: number; filter: string; subtitle?: string }> => {
     const count = (status: string) => assets.filter((a) => a.status === status).length;
     return [
       { label: "Total designs", value: assets.length, filter: ALL },
@@ -143,6 +146,12 @@ export function AdminDashboard({
         label: "Live in Gelato",
         value: assets.filter((a) => a.gelatoStatus === "active").length,
         filter: LIVE_FILTER,
+      },
+      {
+        label: "Est. Variants",
+        value: count("gelato_done") * GELATO_VARIANTS_PER_PRODUCT,
+        subtitle: "2 colors × 5 sizes × live designs",
+        filter: "gelato_done",
       },
     ];
   }, [assets]);
@@ -226,7 +235,7 @@ export function AdminDashboard({
           </div>
         </header>
 
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {stats.map((stat) => (
             <button
               key={stat.label}
@@ -237,9 +246,10 @@ export function AdminDashboard({
               }`}
             >
               <div className="text-3xl font-semibold tabular-nums text-[#c9a84c]">
-                {stat.value}
+                {stat.value.toLocaleString()}
               </div>
               <div className="mt-1 text-sm text-neutral-400">{stat.label}</div>
+              {stat.subtitle && <div className="mt-0.5 text-[11px] text-neutral-600">{stat.subtitle}</div>}
             </button>
           ))}
         </section>
