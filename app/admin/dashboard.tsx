@@ -58,6 +58,11 @@ const STATUSES = [
 // Statuses counted as "In progress" in the stats bar.
 const IN_PROGRESS_STATUSES: string[] = ["dalle_done", "upscaled", "ready_for_review"];
 const IN_PROGRESS_FILTER = "in_progress";
+// Approved designs are the ones sent to Gelato.
+const APPROVED_STATUSES: string[] = ["gelato_pending", "gelato_done"];
+const APPROVED_FILTER = "approved_any";
+// Gelato reports the product active (synced by "Sync Gelato Status").
+const LIVE_FILTER = "live_in_gelato";
 const UNASSIGNED_FILTER = "unassigned";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -125,7 +130,16 @@ export function AdminDashboard({
         value: assets.filter((a) => IN_PROGRESS_STATUSES.includes(a.status)).length,
         filter: IN_PROGRESS_FILTER,
       },
-      { label: "Approved", value: count("approved"), filter: "approved" },
+      {
+        label: "Approved",
+        value: assets.filter((a) => APPROVED_STATUSES.includes(a.status)).length,
+        filter: APPROVED_FILTER,
+      },
+      {
+        label: "Live in Gelato",
+        value: assets.filter((a) => a.gelatoStatus === "active").length,
+        filter: LIVE_FILTER,
+      },
     ];
   }, [assets]);
 
@@ -160,7 +174,9 @@ export function AdminDashboard({
       (sizeFilter === ALL || a.size === sizeFilter) &&
       (statusFilter === ALL ||
         a.status === statusFilter ||
-        (statusFilter === IN_PROGRESS_FILTER && IN_PROGRESS_STATUSES.includes(a.status))) &&
+        (statusFilter === IN_PROGRESS_FILTER && IN_PROGRESS_STATUSES.includes(a.status)) ||
+        (statusFilter === APPROVED_FILTER && APPROVED_STATUSES.includes(a.status)) ||
+        (statusFilter === LIVE_FILTER && a.gelatoStatus === "active")) &&
       (collectionFilter === ALL || a.collectionId === collectionFilter) &&
       (designerFilter === ALL ||
         (designerFilter === UNASSIGNED_FILTER
@@ -206,7 +222,7 @@ export function AdminDashboard({
           </div>
         </header>
 
-        <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {stats.map((stat) => (
             <button
               key={stat.label}
@@ -252,6 +268,8 @@ export function AdminDashboard({
             value={statusFilter}
             options={[
               { value: IN_PROGRESS_FILTER, label: "In progress (any)" },
+              { value: APPROVED_FILTER, label: "Approved (sent to Gelato)" },
+              { value: LIVE_FILTER, label: "Live in Gelato" },
               ...statuses.map((s) => ({ value: s, label: formatStatus(s) })),
             ]}
             onChange={setStatusFilter}
