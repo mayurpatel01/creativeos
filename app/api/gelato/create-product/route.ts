@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
-import { createProduct, GelatoError, productUrlFrom } from "@/lib/gelato/client";
+import { createProduct, GelatoError, productUrlFrom, templateForSizeVariant } from "@/lib/gelato/client";
 import { publishDesignImage } from "@/lib/gelato/public-image";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   const { data: asset, error: assetError } = await supabase
     .from("assets")
-    .select("id, design_number, name, suggested_filename, status, file_path, tags, gelato_product_id, gelato_status")
+    .select("id, design_number, name, suggested_filename, status, size_variant, file_path, tags, gelato_product_id, gelato_status")
     .eq("id", assetId)
     .maybeSingle();
   if (assetError) {
@@ -47,6 +47,15 @@ export async function POST(request: NextRequest) {
     return fail(`Only dalle_done designs can be sent to Gelato (this one is ${asset.status}).`, 409);
   }
   if (!asset.file_path) return fail("This design has no image file.", 409);
+
+  // FULL and CHEST designs print with different templates. Chosen before the
+  // claim so a missing template doesn't leave the design marked as errored.
+  let template;
+  try {
+    template = templateForSizeVariant(asset.size_variant);
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err), 409);
+  }
 
   // Claim the asset first so a double click or a parallel bulk run can't create
   // two Gelato products for it. A previous failure ('error') can be retried.
@@ -79,11 +88,14 @@ export async function POST(request: NextRequest) {
     return fail(err instanceof Error ? err.message : "Couldn't publish the design image.", 500);
   }
 
-  console.log(`[gelato] #${asset.design_number}: sending image ${imageUrl}`);
+  console.log(
+    `[gelato] #${asset.design_number}: sending image ${imageUrl} with ${template.size} template ${template.templateId}`,
+  );
 
   let product;
   try {
     product = await createProduct({
+      templateId: template.templateId,
       title: asset.name ?? asset.suggested_filename,
       description: `Design #${asset.design_number ?? "?"}: ${asset.name ?? asset.suggested_filename}`,
       imageUrl,

@@ -15,6 +15,8 @@ Set these in `.env.local`:
 | `ANTHROPIC_API_KEY` | Rani chat (`/rani`) |
 | `GELATO_API_KEY` | Gelato product creation |
 | `GELATO_STORE_ID` | Gelato store that products are created in |
+| `GELATO_TEMPLATE_ID_FULL` | Gelato template for FULL (full-front) designs. Falls back to the original template if unset |
+| `GELATO_TEMPLATE_ID_CHEST` | Gelato template for CHEST designs. Required to send CHEST designs to Gelato |
 
 ## Getting Started
 

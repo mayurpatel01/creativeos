@@ -7,8 +7,43 @@
 
 const GELATO_ECOMMERCE_URL = "https://ecommerce.gelatoapis.com/v1";
 
-// Bella+Canvas 3001 Premium Unisex Crewneck (Black/White, S–2XL, front print).
-export const DEFAULT_TEMPLATE_ID = "0b84fd43-7a70-49d6-85a4-c9d1a6c7b02a";
+// One Gelato template per print size: FULL designs print full-front, CHEST
+// designs as a chest print. Both are set in the environment.
+export const GELATO_TEMPLATE_ID_FULL = process.env.GELATO_TEMPLATE_ID_FULL;
+export const GELATO_TEMPLATE_ID_CHEST = process.env.GELATO_TEMPLATE_ID_CHEST;
+
+// The original full-front template (Bella+Canvas 3001, Black/White, S–2XL), used
+// for FULL designs until GELATO_TEMPLATE_ID_FULL is set.
+const LEGACY_FULL_TEMPLATE_ID = "0b84fd43-7a70-49d6-85a4-c9d1a6c7b02a";
+
+let warnedFullFallback = false;
+
+export type TemplateChoice = { templateId: string; size: "FULL" | "CHEST" };
+
+// Picks the template for a design's size_variant. Unknown sizes use FULL with a
+// warning. A CHEST design with no CHEST template is an error rather than being
+// printed full-front by mistake.
+export function templateForSizeVariant(sizeVariant: string | null | undefined): TemplateChoice {
+  const size = sizeVariant?.trim().toUpperCase();
+
+  if (size === "CHEST") {
+    if (!GELATO_TEMPLATE_ID_CHEST) {
+      throw new GelatoError(
+        "GELATO_TEMPLATE_ID_CHEST is not set, so CHEST designs can't be sent to Gelato yet.",
+      );
+    }
+    return { templateId: GELATO_TEMPLATE_ID_CHEST, size: "CHEST" };
+  }
+
+  if (size !== "FULL") {
+    console.warn(`[gelato] unknown size_variant ${JSON.stringify(sizeVariant)}; using the FULL template`);
+  }
+  if (!GELATO_TEMPLATE_ID_FULL && !warnedFullFallback) {
+    warnedFullFallback = true;
+    console.warn(`[gelato] GELATO_TEMPLATE_ID_FULL is not set; using the original template ${LEGACY_FULL_TEMPLATE_ID}`);
+  }
+  return { templateId: GELATO_TEMPLATE_ID_FULL ?? LEGACY_FULL_TEMPLATE_ID, size: "FULL" };
+}
 
 // Intended retail prices. The create-from-template endpoint has no documented
 // price field, so these are not sent; set them on the template or store in the
@@ -101,7 +136,7 @@ export type GelatoStoreProduct = {
 // Templates rarely change, so cache them for the life of the server process.
 const templateCache = new Map<string, Promise<GelatoTemplate>>();
 
-export function getTemplate(templateId: string = DEFAULT_TEMPLATE_ID): Promise<GelatoTemplate> {
+export function getTemplate(templateId: string): Promise<GelatoTemplate> {
   let cached = templateCache.get(templateId);
   if (!cached) {
     cached = gelatoFetch<GelatoTemplate>(`/templates/${encodeURIComponent(templateId)}`);
@@ -117,7 +152,8 @@ export type CreateProductParams = {
   // Public URL Gelato downloads the design from. Must be a plain URL with no
   // query string; see publishDesignImage in lib/gelato/public-image.ts.
   imageUrl: string;
-  templateId?: string;
+  // From templateForSizeVariant().
+  templateId: string;
   tags?: string[];
   isVisibleInTheOnlineStore?: boolean;
 };
@@ -126,7 +162,7 @@ export type CreateProductParams = {
 // product. Gelato returns immediately; variants and mockups are generated in
 // the background (poll getProduct for status).
 export async function createProduct(params: CreateProductParams): Promise<GelatoStoreProduct> {
-  const templateId = params.templateId ?? DEFAULT_TEMPLATE_ID;
+  const { templateId } = params;
   const template = await getTemplate(templateId);
   if (!template.variants?.length) {
     throw new GelatoError(`Template ${templateId} has no variants.`);
