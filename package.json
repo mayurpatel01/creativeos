@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
+    "@imgly/background-removal-node": "^1.4.5",
     "@supabase/supabase-js": "^2.117.3",
     "next": "16.4.0",
     "openai": "^7.33.0",
@@ -28,5 +29,10 @@
     "supabase": "^2.120.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@imgly/background-removal-node": {
+      "sharp": "$sharp"
+    }
   }
 }

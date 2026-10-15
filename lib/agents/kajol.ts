@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { removeBackground as imglyRemoveBackground } from "@imgly/background-removal-node";
 import sharp from "sharp";
 import { DESIGN_BUCKET, designObjectUrl, designStoragePath } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
@@ -35,12 +36,8 @@ export type KajolSummary = {
   generated: number;
   failed: number;
   errors: string[];
-  // Images kept on white because Clipdrop failed.
+  // Images kept on white because background removal failed.
   backgroundRemovalFailed: number;
-  // Images kept on white because CLIPDROP_API_KEY isn't set.
-  backgroundRemovalSkipped: number;
-  // Images kept at their original size because Clipdrop upscaling failed.
-  upscaleFailed: number;
   test?: boolean;
 };
 
@@ -139,59 +136,46 @@ function pngDimensions(buffer: Buffer): { width: number; height: number } {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
-const CLIPDROP_URL = "https://clipdrop-api.co/remove-background/v1";
-const CLIPDROP_TIMEOUT_MS = 60_000;
+// Background removal runs locally with IMG.LY's model (bundled in the package,
+// no API key or credits). "medium" is the library default and the better of the
+// two bundled models. The first call in a server process loads the model, so
+// it's slower than the rest.
+const BACKGROUND_REMOVAL_MODEL = "medium";
 
-type RemovalResult =
-  | { status: "removed"; png: Buffer }
-  | { status: "skipped" | "failed" };
+const OPAQUE_ALPHA_THRESHOLD = 250;
 
-// Second pass: strip the white background with Clipdrop. Any failure keeps the
+type RemovalResult = { status: "removed"; png: Buffer } | { status: "failed" };
+
+// Second pass: strip the white background. Any failure keeps the
 // white-background original so the run continues.
 async function removeBackground(png: Buffer, label: string): Promise<RemovalResult> {
-  const apiKey = process.env.CLIPDROP_API_KEY;
-  if (!apiKey) {
-    log(`${label}: CLIPDROP_API_KEY not set, keeping white background`);
-    return { status: "skipped" };
-  }
-
-  log(`${label}: removing background with Clipdrop`);
+  log(`${label}: removing background (local ${BACKGROUND_REMOVAL_MODEL} model)`);
   const started = Date.now();
   try {
-    const form = new FormData();
-    form.append("image_file", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
-
-    const response = await fetch(CLIPDROP_URL, {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: form,
-      signal: AbortSignal.timeout(CLIPDROP_TIMEOUT_MS),
+    // Ask for raw RGBA pixels and encode the PNG here: the library's own PNG
+    // output goes through a quality setting that reduces it to a 256-colour
+    // palette, which bands the airbrush gradients.
+    const blob = await imglyRemoveBackground(new Blob([new Uint8Array(png)], { type: "image/png" }), {
+      model: BACKGROUND_REMOVAL_MODEL,
+      output: { format: "image/x-rgba8" },
     });
-
-    if (!response.ok) {
-      // Clipdrop returns { error: "..." } on failure.
-      const body = await response.json().catch(() => null);
-      throw new Error(`HTTP ${response.status}${body?.error ? `: ${body.error}` : ""}`);
-    }
-
-    // On success the body is the PNG itself.
-    const result = Buffer.from(await response.arrayBuffer());
-    if (!isPng(result)) throw new Error("response is not a PNG");
-    if (!pngHasAlpha(result)) throw new Error("response has no transparency channel");
-
+    const pixels = Buffer.from(await blob.arrayBuffer());
     const before = pngDimensions(png);
-    const after = pngDimensions(result);
-    const remaining = response.headers.get("x-remaining-credits");
-    log(
-      `${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
-        `(${after.width}x${after.height}${remaining ? `, ${remaining} Clipdrop credits left` : ""})`,
-    );
-    if (after.width < before.width || after.height < before.height) {
-      logError(
-        `${label}: Clipdrop returned ${after.width}x${after.height}, smaller than the ` +
-          `${before.width}x${before.height} original`,
-      );
+    if (pixels.length !== before.width * before.height * 4) {
+      throw new Error(`expected ${before.width}x${before.height} RGBA pixels, got ${pixels.length} bytes`);
     }
+    // The model's mask tops out at 254, so solid areas would be very slightly
+    // see-through. Snap near-opaque pixels to fully opaque for printing.
+    for (let i = 3; i < pixels.length; i += 4) {
+      if (pixels[i] >= OPAQUE_ALPHA_THRESHOLD) pixels[i] = 255;
+    }
+    const result = await sharp(pixels, { raw: { width: before.width, height: before.height, channels: 4 } })
+      .png()
+      .toBuffer();
+    if (!pngHasAlpha(result)) throw new Error("result has no transparency channel");
+    const after = pngDimensions(result);
+
+    log(`${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s (${after.width}x${after.height})`);
     return { status: "removed", png: result };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -200,80 +184,9 @@ async function removeBackground(png: Buffer, label: string): Promise<RemovalResu
   }
 }
 
-const CLIPDROP_UPSCALE_URL = "https://clipdrop-api.co/image-upscaling/v1/upscale";
-const UPSCALE_TARGET = 4096; // Clipdrop's synchronous maximum per side.
-const UPSCALE_TIMEOUT_MS = 120_000;
-
-// Third pass: upscale the transparent design for print with Clipdrop. Returns
-// null on any failure so the caller keeps the smaller transparent version.
-async function upscale(png: Buffer, label: string): Promise<Buffer | null> {
-  const apiKey = process.env.CLIPDROP_API_KEY;
-  if (!apiKey) return null;
-
-  const before = pngDimensions(png);
-  const longSide = Math.max(before.width, before.height);
-  if (longSide >= UPSCALE_TARGET) return null;
-  // Scale the long side to the target and keep the aspect ratio (square → 4096×4096).
-  const scale = UPSCALE_TARGET / longSide;
-  const target = { width: Math.round(before.width * scale), height: Math.round(before.height * scale) };
-
-  log(`${label}: upscaling to ${target.width}x${target.height} with Clipdrop`);
-  const started = Date.now();
-  try {
-    const form = new FormData();
-    form.append("image_file", new Blob([new Uint8Array(png)], { type: "image/png" }), "image.png");
-    form.append("target_width", String(target.width));
-    form.append("target_height", String(target.height));
-
-    const response = await fetch(CLIPDROP_UPSCALE_URL, {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-      body: form,
-      signal: AbortSignal.timeout(UPSCALE_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(`HTTP ${response.status}${body?.error ? `: ${body.error}` : ""}`);
-    }
-
-    // Clipdrop returns WebP for images with transparency (JPEG otherwise), but
-    // storage, Gelato and the rest of the pipeline expect PNG, so convert.
-    const contentType = response.headers.get("content-type") ?? "";
-    const raw = Buffer.from(await response.arrayBuffer());
-    const result = isPng(raw) ? raw : await sharp(raw).png().toBuffer();
-
-    const after = pngDimensions(result);
-    if (after.width !== target.width || after.height !== target.height) {
-      throw new Error(`expected ${target.width}x${target.height}, got ${after.width}x${after.height}`);
-    }
-    if (!pngHasAlpha(result)) {
-      throw new Error(`result (${contentType || "unknown type"}) lost its transparency`);
-    }
-
-    const consumed = response.headers.get("x-credits-consumed");
-    const remaining = response.headers.get("x-remaining-credits");
-    log(
-      `${label}: upscaled in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
-        `(${(result.length / 1024 / 1024).toFixed(1)} MB PNG from ${contentType || "?"}` +
-        `${consumed ? `, ${consumed} credit(s) used` : ""}${remaining ? `, ${remaining} left` : ""})`,
-    );
-    return result;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError(`${label}: upscale failed, keeping ${before.width}x${before.height}: ${message}`);
-    return null;
-  }
-}
-
 async function processAsset(
   asset: PendingAsset,
-): Promise<{
-  filePath: string;
-  fileUrl: string;
-  backgroundRemoval: RemovalResult["status"];
-  upscaled: boolean | null;
-}> {
+): Promise<{ filePath: string; fileUrl: string; backgroundRemoval: RemovalResult["status"] }> {
   const supabase = getSupabaseAdmin();
   const label = `#${asset.design_number ?? "?"} ${asset.suggested_filename}`;
   const filePath = designStoragePath(asset.god, asset.suggested_filename);
@@ -287,11 +200,11 @@ async function processAsset(
     throw new Error("Generated file is not a PNG");
   }
 
-  // generate (1024) → remove background → upscale (4096) → save. Upscaling only
-  // runs on a transparent image; each step falls back to the previous result.
+  // generate (1024) → remove background → save. A failed removal keeps the
+  // white-background image.
+  // TODO: re-add upscale step when we have a free/cheap upscale solution
   const removal = await removeBackground(generated, label);
-  const upscaled = removal.status === "removed" ? await upscale(removal.png, label) : null;
-  const png = upscaled ?? (removal.status === "removed" ? removal.png : generated);
+  const png = removal.status === "removed" ? removal.png : generated;
   const { width, height } = pngDimensions(png);
 
   log(`${label}: uploading to ${DESIGN_BUCKET}/${filePath}`);
@@ -335,8 +248,6 @@ async function processAsset(
     filePath,
     fileUrl,
     backgroundRemoval: removal.status,
-    // null when upscaling didn't apply (no transparent image, or no API key).
-    upscaled: removal.status === "removed" && process.env.CLIPDROP_API_KEY ? upscaled !== null : null,
   };
 }
 
@@ -371,8 +282,6 @@ export async function runKajol(
     failed: 0,
     errors: [],
     backgroundRemovalFailed: 0,
-    backgroundRemovalSkipped: 0,
-    upscaleFailed: 0,
     ...(test && { test: true }),
   };
   const images: KajolImage[] = [];
@@ -414,11 +323,9 @@ export async function runKajol(
     // One at a time to stay within OpenAI rate limits.
     for (const asset of assets as PendingAsset[]) {
       try {
-        const { filePath, fileUrl, backgroundRemoval, upscaled } = await processAsset(asset);
+        const { filePath, fileUrl, backgroundRemoval } = await processAsset(asset);
         summary.generated++;
         if (backgroundRemoval === "failed") summary.backgroundRemovalFailed++;
-        if (backgroundRemoval === "skipped") summary.backgroundRemovalSkipped++;
-        if (upscaled === false) summary.upscaleFailed++;
         images.push({
           designNumber: asset.design_number,
           filename: asset.suggested_filename,
