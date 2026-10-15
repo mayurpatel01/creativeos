@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import { removeBackground as imglyRemoveBackground } from "@imgly/background-removal-node";
 import sharp from "sharp";
 import { DESIGN_BUCKET, designObjectUrl, designStoragePath } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
@@ -23,11 +22,19 @@ const IMAGE_QUALITY = "medium"; // GPT image models have no "standard"; medium i
 // Transparency is handled later by removing the white in post-processing.
 const IMAGE_BACKGROUND = "opaque";
 
+// Background removal flood-fills the white from the corners, so the
+// background has to be flat white with crisp edges around the design.
+const WHITE_BACKGROUND_INSTRUCTIONS =
+  "solid flat white background, no shadows, no gradients behind the design, hard clean edges on all design elements";
+
 // Stored prompts ask for a transparent background, which contradicts an opaque
 // render, so swap that phrase at generation time. The database is left as is.
 function withWhiteBackground(prompt: string): string {
-  const swapped = prompt.replace(/transparent background/gi, "plain solid white background");
-  return swapped === prompt ? `${prompt} Plain solid white background.` : swapped;
+  const swapped = prompt.replace(
+    /transparent background/gi,
+    `${WHITE_BACKGROUND_INSTRUCTIONS}, plain solid white background`,
+  );
+  return swapped === prompt ? `${prompt} ${WHITE_BACKGROUND_INSTRUCTIONS}, plain solid white background.` : swapped;
 }
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -124,59 +131,82 @@ function isPng(buffer: Buffer): boolean {
   return buffer.subarray(0, 8).equals(PNG_SIGNATURE);
 }
 
-// True if the PNG can hold transparency: an RGBA or gray+alpha color type in the
-// IHDR header (byte 25), or a palette with a tRNS transparency chunk.
-function pngHasAlpha(buffer: Buffer): boolean {
-  const colorType = buffer[25];
-  return colorType === 4 || colorType === 6 || (colorType === 3 && buffer.includes("tRNS"));
-}
-
 // Width and height from the PNG IHDR header.
 function pngDimensions(buffer: Buffer): { width: number; height: number } {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
-// Background removal runs locally with IMG.LY's model (bundled in the package,
-// no API key or credits). "medium" is the library default and the better of the
-// two bundled models. The first call in a server process loads the model, so
-// it's slower than the rest.
-const BACKGROUND_REMOVAL_MODEL = "medium";
-
-const OPAQUE_ALPHA_THRESHOLD = 200;
+// Background removal: flood-fill the white background from the image corners
+// and make it transparent. Works because generation asks for a flat white
+// background. Pixels count as background white when R, G and B are all above
+// this; it tolerates the slightly warm off-white gpt-image-2 sometimes produces
+// but stops hard at any coloured pixel.
+const WHITE_THRESHOLD = 235;
+// More removed than this means the fill leaked into the design.
+const MAX_REMOVED_FRACTION = 0.95;
 
 type RemovalResult = { status: "removed"; png: Buffer } | { status: "failed" };
 
-// Second pass: strip the white background. Any failure keeps the
+// Clears every near-white pixel connected (4-way) to a near-white corner.
+// White areas inside the design that don't touch the background are kept.
+// Returns how many pixels were made transparent.
+function floodFillWhite(rgba: Buffer, width: number, height: number): { removed: number; seeds: number } {
+  const isWhite = (p: number) => {
+    const i = p * 4;
+    return rgba[i] > WHITE_THRESHOLD && rgba[i + 1] > WHITE_THRESHOLD && rgba[i + 2] > WHITE_THRESHOLD;
+  };
+
+  const corners = [0, width - 1, (height - 1) * width, height * width - 1];
+  const seeds = corners.filter(isWhite);
+  if (seeds.length === 0) throw new Error("no corner is near-white, so there's no white background to remove");
+
+  const visited = new Uint8Array(width * height);
+  const queue = new Int32Array(width * height);
+  let head = 0;
+  let tail = 0;
+  for (const seed of seeds) {
+    if (!visited[seed]) {
+      visited[seed] = 1;
+      queue[tail++] = seed;
+    }
+  }
+
+  while (head < tail) {
+    const p = queue[head++];
+    rgba[p * 4 + 3] = 0;
+    const x = p % width;
+    const neighbours = [x > 0 ? p - 1 : -1, x < width - 1 ? p + 1 : -1, p - width, p + width];
+    for (const n of neighbours) {
+      if (n >= 0 && n < width * height && !visited[n] && isWhite(n)) {
+        visited[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+  }
+
+  return { removed: tail, seeds: seeds.length };
+}
+
+// Second pass: remove the white background. Any failure keeps the
 // white-background original so the run continues.
 async function removeBackground(png: Buffer, label: string): Promise<RemovalResult> {
-  log(`${label}: removing background (local ${BACKGROUND_REMOVAL_MODEL} model)`);
+  log(`${label}: removing white background (flood fill from corners)`);
   const started = Date.now();
   try {
-    // Ask for raw RGBA pixels and encode the PNG here: the library's own PNG
-    // output goes through a quality setting that reduces it to a 256-colour
-    // palette, which bands the airbrush gradients.
-    const blob = await imglyRemoveBackground(new Blob([new Uint8Array(png)], { type: "image/png" }), {
-      model: BACKGROUND_REMOVAL_MODEL,
-      output: { format: "image/x-rgba8" },
-    });
-    const pixels = Buffer.from(await blob.arrayBuffer());
-    const before = pngDimensions(png);
-    if (pixels.length !== before.width * before.height * 4) {
-      throw new Error(`expected ${before.width}x${before.height} RGBA pixels, got ${pixels.length} bytes`);
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { removed, seeds } = floodFillWhite(data, info.width, info.height);
+    const fraction = removed / (info.width * info.height);
+    if (fraction > MAX_REMOVED_FRACTION) {
+      throw new Error(`fill would remove ${(fraction * 100).toFixed(1)}% of the image; it likely leaked into the design`);
     }
-    // The model's mask tops out at 254, and edges of solid artwork come out
-    // partly see-through. Snap mostly-opaque pixels (alpha 200+) to fully
-    // opaque for printing.
-    for (let i = 3; i < pixels.length; i += 4) {
-      if (pixels[i] >= OPAQUE_ALPHA_THRESHOLD) pixels[i] = 255;
-    }
-    const result = await sharp(pixels, { raw: { width: before.width, height: before.height, channels: 4 } })
+
+    const result = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
       .png()
       .toBuffer();
-    if (!pngHasAlpha(result)) throw new Error("result has no transparency channel");
-    const after = pngDimensions(result);
-
-    log(`${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s (${after.width}x${after.height})`);
+    log(
+      `${label}: background removed in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+        `(${(fraction * 100).toFixed(1)}% of pixels cleared from ${seeds} corner(s))`,
+    );
     return { status: "removed", png: result };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
