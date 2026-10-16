@@ -157,7 +157,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
         if (!asset.mockup_male_url) {
           console.log(`[${AGENT}] Male M${variant + 1}: #${asset.design_number}`);
           const imageFile = await toFile(Readable.from(designBuffer), "design.png", { type: "image/png" });
-          const maleRes = await openai.images.edit({
+          const maleRes = await (openai.images.edit({
             model: "gpt-image-1",
             image: imageFile,
             prompt: MALE_PROMPTS[variant] +
@@ -166,7 +166,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
             n: 1,
             // gpt-image-1 returns base64 by default; explicit to avoid surprises
             response_format: "b64_json",
-          } as Parameters<typeof openai.images.edit>[0]);
+          } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
           const maleB64 = maleRes.data?.[0]?.b64_json;
           if (!maleB64) throw new Error("No b64_json in gpt-image-1 male response");
           const maleBuf = Buffer.from(maleB64, "base64");
@@ -180,7 +180,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
         if (!asset.mockup_female_url) {
           console.log(`[${AGENT}] Female F${variant + 1}: #${asset.design_number}`);
           const imageFile2 = await toFile(Readable.from(designBuffer), "design.png", { type: "image/png" });
-          const femaleRes = await openai.images.edit({
+          const femaleRes = await (openai.images.edit({
             model: "gpt-image-1",
             image: imageFile2,
             prompt: FEMALE_PROMPTS[variant] +
@@ -188,7 +188,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
             size: "1024x1024",
             n: 1,
             response_format: "b64_json",
-          } as Parameters<typeof openai.images.edit>[0]);
+          } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
           const femaleB64 = femaleRes.data?.[0]?.b64_json;
           if (!femaleB64) throw new Error("No b64_json in gpt-image-1 female response");
           const femaleBuf = Buffer.from(femaleB64, "base64");
