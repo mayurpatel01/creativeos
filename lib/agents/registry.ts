@@ -52,9 +52,16 @@ export const AGENTS: AgentInfo[] = [
   {
     name: "Aisha",
     role: "Content Writing",
-    description: "Writes product descriptions and SEO blog posts as MDX files in /content/blog.",
+    description: "Writes product descriptions (seo_description) and SEO blog posts saved to the blog_posts table in Supabase.",
     runnable: true,
     apiRoute: "/api/agents/aisha",
+  },
+  {
+    name: "Priya",
+    role: "Market Research",
+    description: "Researches trending product categories, diaspora occasions, and competitor landscape. Saves reports to research_reports table.",
+    runnable: true,
+    apiRoute: "/api/agents/priya",
   },
   {
     name: "Vidya",

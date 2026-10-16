@@ -1,10 +1,9 @@
 // Aisha: content writing agent.
 // Writes product descriptions (seo_description) for active assets,
-// and generates SEO blog posts as MDX files saved to /content/blog.
+// and generates SEO blog posts saved to the Supabase `blog_posts` table
+// so hindutees-web can query them at runtime (no MDX files on disk).
 
 import OpenAI from "openai";
-import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
 import { getSupabaseAdmin } from "../supabase";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
@@ -25,12 +24,21 @@ export type AishaResult = {
   errors: string[];
 };
 
-// Backdate blog posts spread across the past 90 days for historical coverage
+// Spread blog post dates across the past 90 days for historical coverage
 function backdateFor(index: number, total: number): string {
   const end = Date.now() - 7 * 24 * 60 * 60 * 1000; // 1 week ago
   const start = end - 90 * 24 * 60 * 60 * 1000;
   const spread = total > 1 ? (end - start) / (total - 1) : 0;
   return new Date(start + spread * index).toISOString().split("T")[0];
+}
+
+function toSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
 }
 
 async function writeDescription(openai: OpenAI, deity: string, country: string): Promise<string> {
@@ -40,7 +48,7 @@ async function writeDescription(openai: OpenAI, deity: string, country: string):
       {
         role: "system",
         content: `You write compelling product descriptions for HinduTee.com — premium apparel for the Hindu diaspora.
-Celebrate dual cultural identity without clichés. 2-3 paragraphs. Speak to 2nd-gen Hindus directly.`,
+Celebrate dual cultural identity without clichés. 2-3 short paragraphs. Speak directly to 2nd-gen Hindus.`,
       },
       {
         role: "user",
@@ -55,9 +63,9 @@ async function writeBlogPost(
   openai: OpenAI,
   deity: string,
   country: string,
-  slug: string,
+  productSlug: string,
   backdate: string,
-): Promise<{ filename: string; content: string }> {
+): Promise<{ slug: string; title: string; excerpt: string; body: string }> {
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
@@ -65,9 +73,9 @@ async function writeBlogPost(
         role: "system",
         content: `You are Aisha, content writer for HinduTee.com.
 Write SEO blog posts (700-900 words) that help the Hindu diaspora connect with their culture.
-Blend cultural education, diaspora storytelling, and product discovery naturally — never ad-copy.
-Format in Markdown with ## subheadings. Naturally reference our ${deity} × ${country} tee at /products/${slug}.
-Title must be SEO-friendly and specific.`,
+Blend cultural education, diaspora storytelling, and natural product discovery — never ad-copy.
+Use ## subheadings. Naturally reference our ${deity} × ${country} tee near the end at /products/${productSlug}.
+The title must be SEO-friendly and specific. Return only the article — no frontmatter, no code fences.`,
       },
       {
         role: "user",
@@ -76,22 +84,16 @@ Title must be SEO-friendly and specific.`,
     ],
   });
 
-  const body = res.choices[0].message.content ?? "";
+  const body = res.choices[0].message.content?.trim() ?? "";
   const titleMatch = body.match(/^#\s+(.+)$/m);
-  const title = titleMatch?.[1] ?? `${deity} and the ${country} Hindu Diaspora`;
+  const title = titleMatch?.[1]?.replace(/^#+\s*/, "").trim()
+    ?? `${deity} and the ${country} Hindu Diaspora`;
   const excerptMatch = body.match(/\n\n([^#\n].{80,300})/m);
-  const excerpt = excerptMatch?.[1]?.trim().slice(0, 200) ?? `Celebrating ${deity} in the ${country} Hindu community.`;
+  const excerpt = excerptMatch?.[1]?.trim().slice(0, 220)
+    ?? `Celebrating ${deity} in the ${country} Hindu community.`;
+  const slug = toSlug(`${backdate}-${deity}-${country}`);
 
-  const frontmatter = `---
-title: "${title.replace(/"/g, '\\"')}"
-date: "${backdate}"
-excerpt: "${excerpt.replace(/"/g, '\\"')}"
-god: "${deity.toLowerCase()}"
-country: "${country}"
----\n\n`;
-
-  const filename = `${backdate}-${deity.toLowerCase()}-${country.toLowerCase().replace(/\s+/g, "-")}.mdx`;
-  return { filename, content: frontmatter + body };
+  return { slug, title, excerpt, body };
 }
 
 export async function runAisha(): Promise<AishaResult> {
@@ -121,12 +123,11 @@ export async function runAisha(): Promise<AishaResult> {
       return result;
     }
 
-    const blogDir = join(process.cwd(), "content", "blog");
-    mkdirSync(blogDir, { recursive: true });
-
     for (let i = 0; i < assets.length; i++) {
       const asset = assets[i];
-      const deity = asset.god?.charAt(0).toUpperCase() + (asset.god?.slice(1).toLowerCase() ?? "");
+      const deity = asset.god
+        ? asset.god.charAt(0).toUpperCase() + asset.god.slice(1).toLowerCase()
+        : "Unknown";
       const country = asset.country ?? "global";
 
       try {
@@ -141,12 +142,35 @@ export async function runAisha(): Promise<AishaResult> {
           await new Promise(r => setTimeout(r, RATE_LIMIT_MS));
         }
 
-        // Write blog post
-        const backdate = backdateFor(i, assets.length);
-        const { filename, content } = await writeBlogPost(openai, deity, country, asset.slug!, backdate);
-        writeFileSync(join(blogDir, filename), content, "utf-8");
-        result.blogsWritten++;
-        console.log(`[${AGENT}] ✓ Blog: ${filename}`);
+        // Write blog post if one doesn't exist for this god+country combo
+        const { count } = await supabase
+          .from("blog_posts")
+          .select("id", { count: "exact", head: true })
+          .eq("god", asset.god)
+          .eq("country", country);
+
+        if (!count || count === 0) {
+          const backdate = backdateFor(i, assets.length);
+          const { slug, title, excerpt, body } = await writeBlogPost(
+            openai, deity, country, asset.slug!, backdate,
+          );
+
+          const { error: insertErr } = await supabase.from("blog_posts").insert({
+            slug,
+            title,
+            excerpt,
+            body_md: body,
+            god: asset.god,
+            country,
+            published_at: backdate,
+            category: "Culture",
+            reading_minutes: Math.ceil(body.split(/\s+/).length / 200),
+          });
+
+          if (insertErr) throw new Error(`Blog insert failed: ${insertErr.message}`);
+          result.blogsWritten++;
+          console.log(`[${AGENT}] ✓ Blog: ${slug}`);
+        }
       } catch (err) {
         result.failed++;
         const msg = err instanceof Error ? err.message : String(err);

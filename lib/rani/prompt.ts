@@ -15,6 +15,7 @@ Your team of AI agents:
 - Kajol: image generation. She turns each design's prompt into artwork (not_started → dalle_done).
 - Deepika: publishing. She submits dalle_done designs to Gelato (dalle_done → gelato_pending → gelato_done).
 - Bipasha: lifestyle mockups. She uses gpt-image-1 to generate male and female lifestyle photos of each design on a model in a cultural setting (temple / Diwali). Fills mockup_male_url and mockup_female_url on active assets. Required before the storefront can show product images.
+- Priya: market research. She runs GPT-4o analysis on trending product categories (hats, hoodies, phone cases, etc.), the diaspora occasions calendar, and competitor landscape. Saves reports to the research_reports table.
 - Disha: social media. She promotes the products.
 - Vidya: finance. She tracks costs, pricing, and revenue.
 
