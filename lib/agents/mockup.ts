@@ -164,8 +164,6 @@ export async function runMockupAgent(): Promise<MockupResult> {
               "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
             size: "1024x1024",
             n: 1,
-            // gpt-image-1 returns base64 by default; explicit to avoid surprises
-            response_format: "b64_json",
           } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
           const maleB64 = maleRes.data?.[0]?.b64_json;
           if (!maleB64) throw new Error("No b64_json in gpt-image-1 male response");
@@ -187,7 +185,6 @@ export async function runMockupAgent(): Promise<MockupResult> {
               "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
             size: "1024x1024",
             n: 1,
-            response_format: "b64_json",
           } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
           const femaleB64 = femaleRes.data?.[0]?.b64_json;
           if (!femaleB64) throw new Error("No b64_json in gpt-image-1 female response");
