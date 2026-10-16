@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 import type { AgentInfo } from "@/lib/agents/registry";
 import type { KajolImage, KajolResult } from "@/lib/agents/kajol";
 import type { KajolStreamEvent } from "../api/agents/kajol/route";
@@ -25,6 +28,101 @@ const STATUS_STYLES: Record<AgentStatus, string> = {
   Running: "border-sky-800 bg-sky-950/60 text-sky-300",
   Error: "border-red-900 bg-red-950/60 text-red-300",
 };
+
+// Per-agent accent color for avatar initials fallback
+const AGENT_COLORS: Record<string, string> = {
+  Kajol:   "#c9a84c",  // gold
+  Rani:    "#9b59b6",  // violet
+  Deepika: "#3498db",  // blue
+  Bipasha: "#e67e22",  // amber
+  Disha:   "#e74c3c",  // coral
+  Aisha:   "#27ae60",  // green
+  Priya:   "#1abc9c",  // teal
+  Vidya:   "#2ecc71",  // emerald
+  Katrina: "#8e44ad",  // purple
+};
+
+// Card animation variants keyed to status
+const cardVariants = {
+  Idle:    { boxShadow: "0 0 0px rgba(201,168,76,0)" },
+  Running: { boxShadow: "0 0 18px rgba(56,189,248,0.25)" },
+  Error:   { boxShadow: "0 0 18px rgba(239,68,68,0.25)" },
+};
+
+import type { TargetAndTransition } from "framer-motion";
+
+const ringVariants: Record<AgentStatus, TargetAndTransition> = {
+  Idle:    { opacity: 0, scale: 1 },
+  Running: { opacity: [0.4, 0.9, 0.4], scale: [1, 1.08, 1], transition: { duration: 2, repeat: Infinity, ease: "easeInOut" } },
+  Error:   { opacity: 1, x: [0, -4, 4, -4, 0], transition: { duration: 0.45, ease: "easeInOut" } },
+};
+
+// Avatar: tries /agents/<name>.png, falls back to colored initials
+function AgentAvatar({ name, status }: { name: string; status: AgentStatus }) {
+  const [imgErr, setImgErr] = useState(false);
+  const color = AGENT_COLORS[name] ?? "#c9a84c";
+  const initial = name[0].toUpperCase();
+
+  const ringColor = status === "Running" ? "rgba(56,189,248,0.6)" : status === "Error" ? "rgba(239,68,68,0.6)" : "transparent";
+
+  return (
+    <div className="relative shrink-0">
+      {/* Animated ring */}
+      <motion.div
+        className="absolute inset-0 rounded-full"
+        style={{ border: `2px solid ${ringColor}`, borderRadius: "50%" }}
+        animate={ringVariants[status]}
+      />
+      <div className="h-12 w-12 rounded-full overflow-hidden" style={{ border: `2px solid ${color}33` }}>
+        {!imgErr ? (
+          <Image
+            src={`/agents/${name.toLowerCase()}.png`}
+            alt={name}
+            width={48}
+            height={48}
+            className="object-cover"
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <div
+            className="h-full w-full flex items-center justify-center text-lg font-bold"
+            style={{ backgroundColor: `${color}22`, color }}
+          >
+            {initial}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Live Realtime hook — updates card statuses without polling
+function useRealtimeStatuses(
+  initialStatuses: Record<string, AgentStatus>,
+): Record<string, AgentStatus> {
+  const [statuses, setStatuses] = useState(initialStatuses);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("agent_runs_live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "agent_runs" },
+        (payload) => {
+          const row = payload.new as { agent_name?: string; status?: string } | null;
+          if (!row?.agent_name) return;
+          const agentStatus: AgentStatus =
+            row.status === "running" ? "Running" :
+            row.status === "failed"  ? "Error"   : "Idle";
+          setStatuses((prev) => ({ ...prev, [row.agent_name!]: agentStatus }));
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, []);
+
+  return statuses;
+}
 
 function StatusBadge({ status }: { status: AgentStatus }) {
   return (
@@ -94,6 +192,13 @@ function SummaryView({ summary }: { summary: Record<string, unknown> }) {
 }
 
 export function AgentsGrid({ cards, loadError }: { cards: AgentCardData[]; loadError: string | null }) {
+  // Seed Realtime hook with server-rendered statuses
+  const initialStatuses = Object.fromEntries(cards.map(c => [c.name, c.status]));
+  const liveStatuses = useRealtimeStatuses(initialStatuses);
+
+  // Merge live statuses into cards
+  const liveCards = cards.map(c => ({ ...c, status: liveStatuses[c.name] ?? c.status }));
+
   return (
     <main className="min-h-screen flex-1 bg-[#0a0a0a] text-neutral-200">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -121,7 +226,7 @@ export function AgentsGrid({ cards, loadError }: { cards: AgentCardData[]; loadE
         )}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {cards.map((card) =>
+          {liveCards.map((card) =>
             card.streaming
               ? <KajolCard key={card.name} card={card} />
               : card.runnable
@@ -144,11 +249,19 @@ function CardShell({
   children?: React.ReactNode;
 }) {
   return (
-    <article className="flex flex-col rounded-xl border border-neutral-800 bg-[#111] p-5">
+    <motion.article
+      layout
+      animate={cardVariants[status]}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="flex flex-col rounded-xl border border-neutral-800 bg-[#111] p-5"
+    >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-[#c9a84c]">{card.name}</h2>
-          <p className="text-xs uppercase tracking-wider text-neutral-500">{card.role}</p>
+        <div className="flex items-center gap-3">
+          <AgentAvatar name={card.name} status={status} />
+          <div>
+            <h2 className="text-lg font-semibold text-[#c9a84c]">{card.name}</h2>
+            <p className="text-xs uppercase tracking-wider text-neutral-500">{card.role}</p>
+          </div>
         </div>
         <StatusBadge status={status} />
       </div>
@@ -179,7 +292,7 @@ function CardShell({
       </dl>
 
       {children}
-    </article>
+    </motion.article>
   );
 }
 
