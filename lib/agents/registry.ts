@@ -6,6 +6,8 @@ export type AgentInfo = {
   // Where the agent is used today, if it's built.
   href?: string;
   runnable?: boolean;
+  // API route to POST to when running the agent from the UI.
+  apiRoute?: string;
 };
 
 export const AGENTS: AgentInfo[] = [
@@ -14,6 +16,7 @@ export const AGENTS: AgentInfo[] = [
     role: "Image Generation",
     description: "Turns not-started designs' prompts into artwork and uploads it to storage, 1 per run.",
     runnable: true,
+    apiRoute: "/api/agents/kajol",
   },
   {
     name: "Rani",
@@ -24,26 +27,43 @@ export const AGENTS: AgentInfo[] = [
   {
     name: "Deepika",
     role: "Publishing",
-    description: "Gets approved designs listed and live on sales platforms.",
+    description: "Batch-publishes approved designs to Gelato. Runs up to 10 per batch.",
+    runnable: true,
+    apiRoute: "/api/agents/deepika",
+  },
+  {
+    name: "Mockup",
+    role: "Lifestyle Mockups",
+    description: "Uses gpt-image-1 to composite designs onto cultural lifestyle scenes (temple, Diwali, etc).",
+    runnable: true,
+    apiRoute: "/api/agents/mockup",
   },
   {
     name: "Disha",
     role: "Social Media",
-    description: "Plans and posts content that promotes the products.",
+    description: "Generates Instagram, TikTok, and Pinterest captions + hashtags and a content calendar.",
+    runnable: true,
+    apiRoute: "/api/agents/disha",
   },
   {
     name: "Aisha",
     role: "Content Writing",
-    description: "Writes product copy, descriptions, and marketing content.",
+    description: "Writes product descriptions and SEO blog posts as MDX files in /content/blog.",
+    runnable: true,
+    apiRoute: "/api/agents/aisha",
   },
   {
     name: "Vidya",
     role: "Finance",
-    description: "Tracks costs, pricing, and revenue across projects.",
+    description: "Pulls pipeline + order data and produces a financial snapshot report with AI recommendations.",
+    runnable: true,
+    apiRoute: "/api/agents/vidya",
   },
   {
     name: "Katrina",
     role: "SEO",
-    description: "Optimizes titles, descriptions, and keywords for search.",
+    description: "Writes seo_title + seo_description for active assets and regenerates sitemap.xml + robots.txt.",
+    runnable: true,
+    apiRoute: "/api/agents/katrina",
   },
 ];
