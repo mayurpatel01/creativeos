@@ -14,7 +14,10 @@ import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Bipasha";
-const BATCH_SIZE = 5;
+// Keep batch size at 1 while on Vercel Hobby (60s function timeout).
+// gpt-image-1 takes ~30-60s per image; 2 images = ~120s max — we need Pro
+// for BATCH_SIZE > 1. One design (2 images) completes within the limit.
+const BATCH_SIZE = 1;
 const MOCKUP_BUCKET = "mockups";
 
 // Three male (temple) and three female (Diwali) prompt variants.
@@ -162,14 +165,16 @@ export async function runMockupAgent(): Promise<MockupResult> {
               "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
             size: "1024x1024",
             n: 1,
-          });
-          const maleUrl = maleRes.data?.[0]?.url;
-          if (!maleUrl) throw new Error("No URL in gpt-image-1 male response");
-          const maleBuf = await downloadBuffer(maleUrl);
+            // gpt-image-1 returns base64 by default; explicit to avoid surprises
+            response_format: "b64_json",
+          } as Parameters<typeof openai.images.edit>[0]);
+          const maleB64 = maleRes.data?.[0]?.b64_json;
+          if (!maleB64) throw new Error("No b64_json in gpt-image-1 male response");
+          const maleBuf = Buffer.from(maleB64, "base64");
           updates.mockup_male_url = await uploadMockup(supabaseUrl, maleBuf, `${label}-male-m${variant + 1}-${Date.now()}.png`);
           result.generated++;
           console.log(`[${AGENT}] ✓ Male: #${asset.design_number}`);
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 500));
         }
 
         // Female mockup
@@ -183,14 +188,15 @@ export async function runMockupAgent(): Promise<MockupResult> {
               "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
             size: "1024x1024",
             n: 1,
-          });
-          const femaleUrl = femaleRes.data?.[0]?.url;
-          if (!femaleUrl) throw new Error("No URL in gpt-image-1 female response");
-          const femaleBuf = await downloadBuffer(femaleUrl);
+            response_format: "b64_json",
+          } as Parameters<typeof openai.images.edit>[0]);
+          const femaleB64 = femaleRes.data?.[0]?.b64_json;
+          if (!femaleB64) throw new Error("No b64_json in gpt-image-1 female response");
+          const femaleBuf = Buffer.from(femaleB64, "base64");
           updates.mockup_female_url = await uploadMockup(supabaseUrl, femaleBuf, `${label}-female-f${variant + 1}-${Date.now()}.png`);
           result.generated++;
           console.log(`[${AGENT}] ✓ Female: #${asset.design_number}`);
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 500));
         }
 
         if (Object.keys(updates).length > 0) {

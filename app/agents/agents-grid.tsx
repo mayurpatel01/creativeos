@@ -210,9 +210,14 @@ function RunnableCard({ card }: { card: AgentCardData }) {
     try {
       const res = await fetch(card.apiRoute, { method: "POST" });
       if (res.status === 401) { router.push("/admin/login"); return; }
-      const body = await res.json();
-      if (!res.ok) { setError(body?.error ?? `Request failed (${res.status})`); return; }
-      setResult(body);
+      const text = await res.text();
+      let body: Record<string, unknown> | null = null;
+      try { body = JSON.parse(text); } catch { /* non-JSON response */ }
+      if (!res.ok) {
+        setError(body?.error as string ?? `HTTP ${res.status}: ${text.slice(0, 200)}`);
+        return;
+      }
+      setResult(body ?? {});
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
