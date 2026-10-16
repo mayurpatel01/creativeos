@@ -70,7 +70,7 @@ for (const agent of AGENTS) {
       model: "gpt-image-1",
       prompt: agent.prompt,
       size: "1024x1024",
-      quality: "standard",
+      quality: "high",
       n: 1,
     });
     const b64 = res.data[0].b64_json;
