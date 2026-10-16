@@ -10,6 +10,7 @@
 import OpenAI, { toFile } from "openai";
 import { Readable } from "stream";
 import { getSupabaseAdmin } from "../supabase";
+import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Mockup";
@@ -72,6 +73,27 @@ async function downloadBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+// The assets bucket is private. file_url is the canonical object URL
+// (no token). We extract the storage path and create a short-lived
+// signed URL so the agent can download the raw design.
+async function signedDesignBuffer(fileUrl: string, supabaseUrl: string): Promise<Buffer> {
+  // file_url looks like: https://<project>.supabase.co/storage/v1/object/assets/designs/...
+  // Extract everything after /object/assets/
+  const marker = `/storage/v1/object/${DESIGN_BUCKET}/`;
+  const idx = fileUrl.indexOf(marker);
+  if (idx === -1) throw new Error(`Unexpected file_url format: ${fileUrl}`);
+  const storagePath = decodeURIComponent(fileUrl.slice(idx + marker.length));
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.storage
+    .from(DESIGN_BUCKET)
+    .createSignedUrl(storagePath, 300); // 5-min window — enough for one design
+  if (error || !data?.signedUrl) {
+    throw new Error(`Could not sign design URL: ${error?.message ?? "no URL returned"}`);
+  }
+  return downloadBuffer(data.signedUrl);
+}
+
 async function uploadMockup(
   supabaseUrl: string,
   buffer: Buffer,
@@ -126,7 +148,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
       const label = `${asset.god?.toLowerCase() ?? "design"}-${asset.design_number ?? asset.id.slice(0, 8)}`;
 
       try {
-        const designBuffer = await downloadBuffer(asset.file_url!);
+        const designBuffer = await signedDesignBuffer(asset.file_url!, supabaseUrl);
         const updates: Record<string, string> = {};
 
         // Male mockup
