@@ -5,7 +5,10 @@ export type ProjectStatus = {
   slug: string;
   totalAssets: number;
   assetsByStatus: Record<string, number>;
+  assetsByGelatoStatus: Record<string, number>;
   approved: number;
+  liveInGelato: number;
+  mockupsMissing: number;
 };
 
 export type StatusSummary = {
@@ -32,7 +35,7 @@ export async function getStatusSummary(): Promise<StatusSummary> {
 
   const [projectsResult, assetsResult, designersResult, assignmentsResult] = await Promise.all([
     supabase.from("projects").select("id, name, slug").order("name"),
-    supabase.from("assets").select("project_id, status, approved"),
+    supabase.from("assets").select("project_id, status, approved, gelato_status, mockup_male_url, mockup_female_url"),
     supabase.from("designers").select("id", { count: "exact", head: true }).eq("active", true),
     supabase.from("assignments").select("status"),
   ]);
@@ -47,12 +50,18 @@ export async function getStatusSummary(): Promise<StatusSummary> {
 
   const projects = (projectsResult.data ?? []).map((p) => {
     const projectAssets = assets.filter((a) => a.project_id === p.id);
+    const liveAssets = projectAssets.filter((a) => a.gelato_status === "active");
     return {
       name: p.name,
       slug: p.slug,
       totalAssets: projectAssets.length,
       assetsByStatus: countBy(projectAssets, (a) => a.status ?? "unknown"),
+      assetsByGelatoStatus: countBy(projectAssets, (a) => a.gelato_status ?? "not_synced"),
       approved: projectAssets.filter(isApproved).length,
+      liveInGelato: liveAssets.length,
+      mockupsMissing: liveAssets.filter(
+        (a) => !a.mockup_male_url || !a.mockup_female_url
+      ).length,
     };
   });
 
@@ -77,8 +86,11 @@ export function formatStatusSummary(summary: StatusSummary): string {
   ];
   for (const p of summary.projects) {
     lines.push(
-      `- ${p.name} (${p.slug}): ${p.totalAssets} assets, ${p.approved} approved. ` +
-        `By status: ${formatCounts(p.assetsByStatus)}`,
+      `- ${p.name} (${p.slug}): ${p.totalAssets} assets total. ` +
+        `${p.liveInGelato} live in Gelato (gelato_status=active), ${p.mockupsMissing} of those missing mockup images. ` +
+        `${p.approved} approved via human review. ` +
+        `By pipeline status: ${formatCounts(p.assetsByStatus)}. ` +
+        `By Gelato status: ${formatCounts(p.assetsByGelatoStatus)}.`,
     );
   }
   return lines.join("\n");
