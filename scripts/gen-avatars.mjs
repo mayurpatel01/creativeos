@@ -56,6 +56,10 @@ const AGENTS = [
     name: "Katrina",
     prompt: "Stylized flat-color illustrated portrait of a South Asian SEO strategist named Katrina. Sharp, perceptive expression. Magnifying glass and star motif. Violet and gold color palette. Goddess aesthetic. Circular frame. Soft inner glow. Clean dark gradient background. No text. Square canvas.",
   },
+  {
+    name: "Meera",
+    prompt: "Stylized flat-color illustrated portrait of a South Asian QA auditor named Meera. Precise, observant expression. Checklist and magnifying glass motif. Cyan and gold color palette. Goddess aesthetic. Circular frame. Soft inner glow. Clean dark gradient background. No text. Square canvas.",
+  },
 ];
 
 for (const agent of AGENTS) {

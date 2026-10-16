@@ -75,8 +75,17 @@ export async function runKatrina(): Promise<KatrinaResult> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
-    // Write SEO for active assets missing tags
-    const { data: needsSeo, error: seoError } = await supabase
+    // Prioritize asset IDs flagged by Meera's QA audit
+    const { data: flaggedIssues } = await supabase
+      .from("qa_issues")
+      .select("asset_id")
+      .eq("owner_agent", "katrina")
+      .eq("flagged_for_agent", true)
+      .eq("resolved", false);
+    const flaggedIds = [...new Set((flaggedIssues ?? []).map(r => r.asset_id as string))];
+
+    // Write SEO for active assets missing tags; flagged ones first
+    let needsSeoQuery = supabase
       .from("assets")
       .select("id, design_number, god, country, slug")
       .eq("gelato_status", "active")
@@ -85,9 +94,28 @@ export async function runKatrina(): Promise<KatrinaResult> {
       .order("design_number", { ascending: true })
       .limit(BATCH_SIZE);
 
+    // If there are flagged IDs, fetch those first as a separate batch
+    let priorityAssets: typeof needsSeo = [];
+    if (flaggedIds.length > 0) {
+      const { data: flaggedAssets } = await supabase
+        .from("assets")
+        .select("id, design_number, god, country, slug")
+        .in("id", flaggedIds.slice(0, BATCH_SIZE));
+      priorityAssets = flaggedAssets ?? [];
+    }
+
+    const { data: needsSeo, error: seoError } = await needsSeoQuery;
+
     if (seoError) throw new Error(`SEO query failed: ${seoError.message}`);
 
-    for (const asset of needsSeo ?? []) {
+    // Merge: flagged assets first, then regular queue (deduplicated)
+    const seenIds = new Set(priorityAssets.map(a => a.id));
+    const mergedAssets = [
+      ...priorityAssets,
+      ...(needsSeo ?? []).filter(a => !seenIds.has(a.id)),
+    ].slice(0, BATCH_SIZE);
+
+    for (const asset of mergedAssets) {
       try {
         if (result.seoUpdated > 0) await new Promise(r => setTimeout(r, RATE_LIMIT_MS));
         const deity = asset.god?.charAt(0).toUpperCase() + (asset.god?.slice(1).toLowerCase() ?? "");

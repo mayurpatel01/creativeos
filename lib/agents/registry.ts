@@ -77,4 +77,12 @@ export const AGENTS: AgentInfo[] = [
     runnable: true,
     apiRoute: "/api/agents/katrina",
   },
+  {
+    name: "Meera",
+    role: "QA & Audit",
+    description: "Audits live product pages for SEO signals, missing images, alt tags, and structured data. Routes issues to the right agent.",
+    runnable: true,
+    apiRoute: "/api/agents/meera",
+    href: "/qa",
+  },
 ];

@@ -40,6 +40,7 @@ const AGENT_COLORS: Record<string, string> = {
   Priya:   "#1abc9c",  // teal
   Vidya:   "#2ecc71",  // emerald
   Katrina: "#8e44ad",  // purple
+  Meera:   "#06b6d4",  // cyan
 };
 
 // Card animation variants keyed to status
