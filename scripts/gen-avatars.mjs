@@ -67,19 +67,18 @@ for (const agent of AGENTS) {
   try {
     process.stdout.write(`Generating ${agent.name}... `);
     const res = await openai.images.generate({
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: agent.prompt,
       size: "1024x1024",
       quality: "standard",
       n: 1,
     });
-    const url = res.data[0].url;
-    if (!url) throw new Error("No URL in response");
-    const buf = await fetch(url).then(r => r.arrayBuffer());
-    fs.writeFileSync(outPath, Buffer.from(buf));
+    const b64 = res.data[0].b64_json;
+    if (!b64) throw new Error("No b64_json in response");
+    fs.writeFileSync(outPath, Buffer.from(b64, "base64"));
     console.log(`✓ saved to public/agents/${agent.name.toLowerCase()}.png`);
-    // Rate limit: 5 images/min on dall-e-3
-    await new Promise(r => setTimeout(r, 13_000));
+    // Brief pause between calls
+    await new Promise(r => setTimeout(r, 2_000));
   } catch (err) {
     console.error(`\n✗ ${agent.name}:`, err.message);
   }
