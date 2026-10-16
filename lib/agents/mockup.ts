@@ -14,10 +14,9 @@ import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Bipasha";
-// Keep batch size at 1 while on Vercel Hobby (60s function timeout).
-// gpt-image-1 takes ~30-60s per image; 2 images = ~120s max — we need Pro
-// for BATCH_SIZE > 1. One design (2 images) completes within the limit.
-const BATCH_SIZE = 1;
+// 5 designs × 2 images = up to 10 gpt-image-1 calls per run (~5 min max).
+// maxDuration=300 keeps us within Vercel Pro's 5-minute function limit.
+const BATCH_SIZE = 5;
 const MOCKUP_BUCKET = "mockups";
 
 // Three male (temple) and three female (Diwali) prompt variants.
