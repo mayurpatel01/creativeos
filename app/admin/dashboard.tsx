@@ -82,7 +82,7 @@ const STATUS_STYLES: Record<string, string> = {
 // Readable names for the pipeline statuses; others are title-cased.
 const STATUS_LABELS: Record<string, string> = {
   not_started: "Queued",
-  dalle_done: "Ready",
+  dalle_done: "Ready for Review",
   gelato_pending: "Pending",
   gelato_done: "Live",
 };
