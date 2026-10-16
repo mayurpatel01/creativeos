@@ -1,17 +1,15 @@
 // Katrina: SEO agent.
-// Writes seo_title and seo_description to assets that are missing them,
-// and outputs a sitemap.xml + robots.txt to /public for Next.js to serve.
+// Writes seo_title and seo_description to assets that are missing them.
+// Sitemap + robots.txt are handled by Next.js dynamic routes on hindutees-web
+// (app/sitemap.ts and app/robots.ts) — no disk writes needed here.
 
 import OpenAI from "openai";
-import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
 import { getSupabaseAdmin } from "../supabase";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Katrina";
 const BATCH_SIZE = 20;
 const RATE_LIMIT_MS = 500;
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://hindutee.com";
 
 export class KatrinaBusyError extends Error {
   constructor() {
@@ -21,7 +19,7 @@ export class KatrinaBusyError extends Error {
 
 export type KatrinaResult = {
   seoUpdated: number;
-  sitemapUrls: number;
+  sitemapNote: string;
   failed: number;
   errors: string[];
 };
@@ -60,49 +58,18 @@ Title: 50-60 chars. Description: 150-160 chars. Be specific — no generic phras
   };
 }
 
-function buildSitemap(slugs: string[], lastmods: string[]): string {
-  const staticPages = [
-    { loc: BASE_URL, priority: "1.0", changefreq: "weekly" },
-    { loc: `${BASE_URL}/shop`, priority: "0.9", changefreq: "daily" },
-    { loc: `${BASE_URL}/about`, priority: "0.7", changefreq: "monthly" },
-  ];
-
-  const productEntries = slugs.map((slug, i) => ({
-    loc: `${BASE_URL}/products/${slug}`,
-    priority: "0.8",
-    changefreq: "weekly",
-    lastmod: lastmods[i] ?? new Date().toISOString().split("T")[0],
-  }));
-
-  const all = [...staticPages, ...productEntries];
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${all
-  .map(
-    (u) => `  <url>
-    <loc>${u.loc}</loc>
-    <changefreq>${u.changefreq}</changefreq>
-    <priority>${u.priority}</priority>${
-      "lastmod" in u ? `\n    <lastmod>${u.lastmod}</lastmod>` : ""
-    }
-  </url>`,
-  )
-  .join("\n")}
-</urlset>`;
-}
-
-function buildRobots(): string {
-  return `User-agent: *\nAllow: /\n\nSitemap: ${BASE_URL}/sitemap.xml\n`;
-}
-
 export async function runKatrina(): Promise<KatrinaResult> {
   const supabase = getSupabaseAdmin();
 
   if (await hasActiveRun(AGENT)) throw new KatrinaBusyError();
   const runId = await startAgentRun(AGENT);
 
-  const result: KatrinaResult = { seoUpdated: 0, sitemapUrls: 0, failed: 0, errors: [] };
+  const result: KatrinaResult = {
+    seoUpdated: 0,
+    sitemapNote: "Sitemap is dynamic — served by /sitemap.ts route on hindutees-web, always up to date.",
+    failed: 0,
+    errors: [],
+  };
 
   if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -136,31 +103,11 @@ export async function runKatrina(): Promise<KatrinaResult> {
       }
     }
 
-    // Build sitemap from all active assets with slugs
-    const { data: allActive } = await supabase
-      .from("assets")
-      .select("slug, updated_at")
-      .eq("gelato_status", "active")
-      .not("slug", "is", null)
-      .order("design_number", { ascending: true });
-
-    const slugs = (allActive ?? []).map(a => a.slug as string);
-    const lastmods = (allActive ?? []).map(a =>
-      (a.updated_at as string | null)?.split("T")[0] ?? new Date().toISOString().split("T")[0]
-    );
-
-    // Write to /public so Next.js serves them at the root
-    const publicDir = join(process.cwd(), "public");
-    mkdirSync(publicDir, { recursive: true });
-    writeFileSync(join(publicDir, "sitemap.xml"), buildSitemap(slugs, lastmods), "utf-8");
-    writeFileSync(join(publicDir, "robots.txt"), buildRobots(), "utf-8");
-
-    result.sitemapUrls = slugs.length + 3; // products + static pages
-    console.log(`[${AGENT}] Sitemap written: ${result.sitemapUrls} URLs`);
+    console.log(`[${AGENT}] Done: ${result.seoUpdated} SEO records updated`);
 
     await finishAgentRun(AGENT, runId, result.failed === 0 ? "completed" : "failed", {
       seoUpdated: result.seoUpdated,
-      sitemapUrls: result.sitemapUrls,
+      sitemapNote: result.sitemapNote,
       failed: result.failed,
       errors: result.errors,
     });
@@ -169,7 +116,7 @@ export async function runKatrina(): Promise<KatrinaResult> {
   } catch (err) {
     await finishAgentRun(AGENT, runId, "failed", {
       seoUpdated: result.seoUpdated,
-      sitemapUrls: result.sitemapUrls,
+      sitemapNote: result.sitemapNote,
       failed: result.failed,
       errors: [err instanceof Error ? err.message : String(err)],
     });

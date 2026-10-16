@@ -1,10 +1,8 @@
 // Disha: social media agent.
 // Generates ready-to-post captions + hashtags for Instagram, TikTok, and Pinterest.
-// Outputs a content calendar JSON + CSV to /content/social.
+// Saves posts to the social_posts Supabase table for pickup by n8n.
 
 import OpenAI from "openai";
-import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
 import { getSupabaseAdmin } from "../supabase";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
@@ -29,14 +27,14 @@ export type DishaPost = {
   image_url: string | null;
   caption: string;
   hashtags: string[];
-  post_date: string;
+  scheduled_at: string;
   product_url: string;
+  status: "pending";
 };
 export type DishaResult = {
   postsGenerated: number;
   failed: number;
   errors: string[];
-  calendarPath: string;
 };
 
 const PLATFORMS: DishaPlatform[] = ["instagram", "tiktok", "pinterest"];
@@ -91,7 +89,7 @@ export async function runDisha(): Promise<DishaResult> {
   if (await hasActiveRun(AGENT)) throw new DishaBusyError();
   const runId = await startAgentRun(AGENT);
 
-  const result: DishaResult = { postsGenerated: 0, failed: 0, errors: [], calendarPath: "" };
+  const result: DishaResult = { postsGenerated: 0, failed: 0, errors: [] };
 
   if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -107,7 +105,7 @@ export async function runDisha(): Promise<DishaResult> {
     if (error) throw new Error(`Asset query failed: ${error.message}`);
     if (!assets?.length) {
       console.log(`[${AGENT}] No active assets to generate content for.`);
-      await finishAgentRun(AGENT, runId, "completed", { postsGenerated: 0, failed: 0, errors: [], calendarPath: "" });
+      await finishAgentRun(AGENT, runId, "completed", { postsGenerated: 0, failed: 0, errors: [] });
       return result;
     }
 
@@ -133,8 +131,9 @@ export async function runDisha(): Promise<DishaResult> {
             image_url: imageUrl,
             caption,
             hashtags,
-            post_date: scheduleDate(postIndex, platform),
+            scheduled_at: scheduleDate(postIndex, platform),
             product_url: productUrl,
+            status: "pending",
           });
           result.postsGenerated++;
           postIndex++;
@@ -147,34 +146,32 @@ export async function runDisha(): Promise<DishaResult> {
       }
     }
 
-    // Sort by scheduled date
-    posts.sort((a, b) => new Date(a.post_date).getTime() - new Date(b.post_date).getTime());
+    if (posts.length > 0) {
+      // Sort by scheduled date before inserting
+      posts.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
 
-    const socialDir = join(process.cwd(), "content", "social");
-    mkdirSync(socialDir, { recursive: true });
+      // Insert to Supabase — n8n polls this table and picks up pending posts
+      const rows = posts.map(p => ({
+        asset_id: p.asset_id,
+        design_number: p.design_number,
+        god: p.god,
+        country: p.country,
+        platform: p.platform,
+        image_url: p.image_url,
+        caption: p.caption,
+        hashtags: p.hashtags,
+        scheduled_at: p.scheduled_at,
+        product_url: p.product_url,
+        status: p.status,
+      }));
 
-    const today = new Date().toISOString().split("T")[0];
-    const calendarPath = join(socialDir, `content-calendar-${today}.json`);
-    writeFileSync(calendarPath, JSON.stringify({ generated_at: new Date().toISOString(), posts }, null, 2), "utf-8");
+      const { error: insertError } = await supabase.from("social_posts").insert(rows);
+      if (insertError) throw new Error(`social_posts insert failed: ${insertError.message}`);
 
-    // CSV for importing into scheduling tools
-    const csvLines = ["platform,post_date,god,country,caption,hashtags,image_url,product_url"];
-    for (const p of posts) {
-      csvLines.push([
-        p.platform,
-        p.post_date,
-        p.god,
-        p.country,
-        `"${p.caption.replace(/"/g, '""')}"`,
-        `"${p.hashtags.join(" ")}"`,
-        p.image_url ?? "",
-        p.product_url,
-      ].join(","));
+      console.log(`[${AGENT}] ✓ ${posts.length} posts saved to social_posts table`);
     }
-    writeFileSync(join(socialDir, `content-calendar-${today}.csv`), csvLines.join("\n"), "utf-8");
 
-    result.calendarPath = calendarPath;
-    console.log(`[${AGENT}] Done: ${result.postsGenerated} posts → ${calendarPath}`);
+    console.log(`[${AGENT}] Done: ${result.postsGenerated} posts generated`);
 
     await finishAgentRun(AGENT, runId, result.failed === 0 ? "completed" : "failed", {
       postsGenerated: result.postsGenerated,
