@@ -3,7 +3,9 @@
 // cultural setting — temple (male) and Diwali festival (female).
 //
 // Writes mockup_male_url and mockup_female_url back to assets.
-// Uploads results to the 'assets' Supabase Storage bucket under mockups/.
+// Uploads results to the 'mockups' Supabase Storage bucket (public) so
+// product images are accessible without signed URLs. Raw design files
+// stay in the private 'assets' bucket.
 
 import OpenAI, { toFile } from "openai";
 import { Readable } from "stream";
@@ -12,7 +14,7 @@ import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Mockup";
 const BATCH_SIZE = 5;
-const MOCKUP_BUCKET = "assets";
+const MOCKUP_BUCKET = "mockups";
 
 // Three male (temple) and three female (Diwali) prompt variants.
 // The agent cycles through them so consecutive products get visual variety.
@@ -78,7 +80,7 @@ async function uploadMockup(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.storage
     .from(MOCKUP_BUCKET)
-    .upload(`mockups/${fileName}`, buffer, { contentType: "image/png", upsert: true });
+    .upload(fileName, buffer, { contentType: "image/png", upsert: true });
   if (error) throw new Error(`Storage upload failed: ${error.message}`);
   const { data: { publicUrl } } = supabase.storage
     .from(MOCKUP_BUCKET)
