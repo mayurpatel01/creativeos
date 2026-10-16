@@ -8,6 +8,9 @@ export type AgentInfo = {
   runnable?: boolean;
   // API route to POST to when running the agent from the UI.
   apiRoute?: string;
+  // True for agents that stream NDJSON log events (like Kajol).
+  // False/absent means the route returns a plain JSON summary.
+  streaming?: boolean;
 };
 
 export const AGENTS: AgentInfo[] = [
@@ -16,6 +19,7 @@ export const AGENTS: AgentInfo[] = [
     role: "Image Generation",
     description: "Turns not-started designs' prompts into artwork and uploads it to storage, 1 per run.",
     runnable: true,
+    streaming: true,
     apiRoute: "/api/agents/kajol",
   },
   {
@@ -32,7 +36,7 @@ export const AGENTS: AgentInfo[] = [
     apiRoute: "/api/agents/deepika",
   },
   {
-    name: "Mockup",
+    name: "Bipasha",
     role: "Lifestyle Mockups",
     description: "Uses gpt-image-1 to composite designs onto cultural lifestyle scenes (temple, Diwali, etc).",
     runnable: true,

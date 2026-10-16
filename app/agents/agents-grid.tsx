@@ -114,7 +114,11 @@ export function AgentsGrid({ cards, loadError }: { cards: AgentCardData[]; loadE
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((card) =>
-            card.runnable ? <KajolCard key={card.name} card={card} /> : <AgentCard key={card.name} card={card} />,
+            card.streaming
+              ? <KajolCard key={card.name} card={card} />
+              : card.runnable
+                ? <RunnableCard key={card.name} card={card} />
+                : <AgentCard key={card.name} card={card} />,
           )}
         </div>
       </div>
@@ -184,6 +188,71 @@ function AgentCard({ card }: { card: AgentCardData }) {
           </Link>
         </div>
       )}
+    </CardShell>
+  );
+}
+
+// Generic card for runnable agents that return plain JSON (no streaming).
+function RunnableCard({ card }: { card: AgentCardData }) {
+  const router = useRouter();
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ generated?: number; failed?: number; errors?: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const status: AgentStatus = running ? "Running" : error ? "Error" : card.status;
+
+  async function run() {
+    if (!card.apiRoute) return;
+    if (!window.confirm(`Run ${card.name} now? This will use paid AI credits.`)) return;
+    setRunning(true);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await fetch(card.apiRoute, { method: "POST" });
+      if (res.status === 401) { router.push("/admin/login"); return; }
+      const body = await res.json();
+      if (!res.ok) { setError(body?.error ?? `Request failed (${res.status})`); return; }
+      setResult(body);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <CardShell card={card} status={status}>
+      {result && (
+        <div className="mt-4 rounded-lg border border-neutral-800 bg-[#0a0a0a] p-3 text-sm">
+          <p>
+            <span className="tabular-nums text-[#c9a84c]">{result.generated ?? 0}</span>
+            <span className="text-neutral-400"> generated · </span>
+            <span className={`tabular-nums ${(result.failed ?? 0) > 0 ? "text-red-300" : "text-neutral-200"}`}>
+              {result.failed ?? 0}
+            </span>
+            <span className="text-neutral-400"> failed</span>
+          </p>
+          {result.errors && result.errors.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 text-xs text-red-300/90">
+              {result.errors.slice(0, 3).map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-red-300">{error}</p>
+      )}
+      <div className="mt-auto pt-4">
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={running || card.status === "Running"}
+          className="rounded-md bg-[#c9a84c] px-4 py-2 text-sm font-semibold text-[#0a0a0a] transition hover:bg-[#d8ba62] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {running ? "Running…" : "Run now"}
+        </button>
+      </div>
     </CardShell>
   );
 }

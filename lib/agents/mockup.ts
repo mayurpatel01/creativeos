@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "../supabase";
 import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
-const AGENT = "Mockup";
+const AGENT = "Bipasha";
 const BATCH_SIZE = 5;
 const MOCKUP_BUCKET = "mockups";
 
