@@ -41,9 +41,12 @@ function StatusBadge({ status }: { status: AgentStatus }) {
 
 // Rendered in the browser's time zone; the server's would differ.
 function LocalTime({ iso }: { iso: string }) {
+  // Supabase timestamptz may arrive without a Z suffix; append it so
+  // the Date constructor always parses as UTC, not as local time.
+  const utc = iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z";
   return (
     <time dateTime={iso} suppressHydrationWarning>
-      {new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+      {new Date(utc).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
     </time>
   );
 }
