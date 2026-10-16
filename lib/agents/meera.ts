@@ -223,6 +223,17 @@ export async function runMeera(): Promise<MeeraResult> {
             for (const c of checks) {
               result.issuesByAgent[c.owner_agent] = (result.issuesByAgent[c.owner_agent] ?? 0) + 1;
             }
+            // Auto-flag all failures to the owning agent so they're prioritized on next run
+            const hasFails = rows.some(r => r.severity === "fail" && r.owner_agent !== "manual");
+            if (hasFails) {
+              await supabase
+                .from("qa_issues")
+                .update({ flagged_for_agent: true })
+                .eq("slug", asset.slug!)
+                .eq("resolved", false)
+                .eq("severity", "fail")
+                .neq("owner_agent", "manual");
+            }
           }
         }
 

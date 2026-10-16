@@ -211,6 +211,9 @@ export function AgentsGrid({ cards, loadError }: { cards: AgentCardData[]; loadE
             <h1 className="mt-1 text-3xl font-semibold text-white">Agents</h1>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/qa" className="text-sm text-neutral-400 transition hover:text-[#c9a84c]">
+              QA ↗
+            </Link>
             <Link href="/content" className="text-sm text-neutral-400 transition hover:text-[#c9a84c]">
               Content ↗
             </Link>

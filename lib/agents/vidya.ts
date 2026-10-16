@@ -3,8 +3,6 @@
 // Outputs a Markdown report to /reports/finance.
 
 import OpenAI from "openai";
-import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
 import { getSupabaseAdmin } from "../supabase";
 import { RETAIL_PRICING_USD } from "../gelato/client";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
@@ -21,7 +19,7 @@ export class VidyaBusyError extends Error {
 }
 
 export type VidyaResult = {
-  snapshotPath: string;
+  reportId: string;
   liveDesigns: number;
   totalOrders: number;
   grossRevenue: number;
@@ -152,7 +150,7 @@ export async function runVidya(): Promise<VidyaResult> {
   if (await hasActiveRun(AGENT)) throw new VidyaBusyError();
   const runId = await startAgentRun(AGENT);
 
-  const result: VidyaResult = { snapshotPath: "", liveDesigns: 0, totalOrders: 0, grossRevenue: 0, netRevenue: 0 };
+  const result: VidyaResult = { reportId: "", liveDesigns: 0, totalOrders: 0, grossRevenue: 0, netRevenue: 0 };
 
   if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -163,14 +161,22 @@ export async function runVidya(): Promise<VidyaResult> {
 
     const date = new Date().toISOString();
     const report = formatReport(pipeline, orders, recommendations, date);
-
-    const reportDir = join(process.cwd(), "reports", "finance");
-    mkdirSync(reportDir, { recursive: true });
     const today = date.split("T")[0];
-    const snapshotPath = join(reportDir, `snapshot-${today}.md`);
-    writeFileSync(snapshotPath, report, "utf-8");
 
-    result.snapshotPath = snapshotPath;
+    // Save to research_reports table (same table Priya uses) so Content page can show it
+    const supabase = getSupabaseAdmin();
+    const { data: inserted } = await supabase
+      .from("research_reports")
+      .insert({
+        topic: "finance",
+        title: `Financial Snapshot — ${today}`,
+        summary: `${pipeline.live} live · ${orders.orders} orders · $${orders.gross.toFixed(2)} gross · $${orders.net.toFixed(2)} net`,
+        body_md: report,
+      })
+      .select("id")
+      .single();
+
+    result.reportId = inserted?.id ?? "";
     result.liveDesigns = pipeline.live;
     result.totalOrders = orders.orders;
     result.grossRevenue = orders.gross;
@@ -179,6 +185,7 @@ export async function runVidya(): Promise<VidyaResult> {
     console.log(`[${AGENT}] Snapshot: $${orders.gross} gross · ${orders.orders} orders · ${pipeline.live} live`);
 
     await finishAgentRun(AGENT, runId, "completed", {
+      reportId: result.reportId,
       liveDesigns: pipeline.live,
       totalOrders: orders.orders,
       grossRevenue: orders.gross,
