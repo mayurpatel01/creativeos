@@ -104,9 +104,14 @@ export function AgentsGrid({ cards, loadError }: { cards: AgentCardData[]; loadE
             </p>
             <h1 className="mt-1 text-3xl font-semibold text-white">Agents</h1>
           </div>
-          <Link href="/admin" className="text-sm text-neutral-400 transition hover:text-[#c9a84c]">
-            ← Admin
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/content" className="text-sm text-neutral-400 transition hover:text-[#c9a84c]">
+              Content ↗
+            </Link>
+            <Link href="/admin" className="text-sm text-neutral-400 transition hover:text-[#c9a84c]">
+              ← Admin
+            </Link>
+          </div>
         </header>
 
         {loadError && (
