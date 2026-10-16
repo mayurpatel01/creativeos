@@ -14,9 +14,10 @@ import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Bipasha";
-// 5 designs × 2 images = up to 10 gpt-image-1 calls per run (~5 min max).
-// maxDuration=300 keeps us within Vercel Pro's 5-minute function limit.
-const BATCH_SIZE = 5;
+// 2 designs × 2 images = 4 gpt-image-1 calls per run (~2 min).
+// Kept small because each gpt-image-1 call takes 20-40s; 5-asset batches
+// were timing out at Vercel's 5-min function limit.
+const BATCH_SIZE = 2;
 const MOCKUP_BUCKET = "mockups";
 
 // Six male and six female prompt variants — each describes a visually distinct person
