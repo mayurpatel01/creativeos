@@ -14,10 +14,11 @@ import { DESIGN_BUCKET } from "../design-storage";
 import { finishAgentRun, hasActiveRun, startAgentRun } from "./runs";
 
 const AGENT = "Bipasha";
-// 2 designs × 2 images = 4 gpt-image-1 calls per run (~2 min).
-// Kept small because each gpt-image-1 call takes 20-40s; 5-asset batches
-// were timing out at Vercel's 5-min function limit.
-const BATCH_SIZE = 2;
+// 5 designs × 2 parallel images = 10 gpt-image-1 calls per run.
+// Male + female are now generated in parallel per asset (~25-35s each pair),
+// so 5 assets ≈ 5 × 35s sequential asset pairs = ~175s + overhead, safely
+// within Vercel's 300s maxDuration.
+const BATCH_SIZE = 5;
 const MOCKUP_BUCKET = "mockups";
 
 // Six male and six female prompt variants — each describes a visually distinct person
@@ -199,46 +200,59 @@ export async function runMockupAgent(): Promise<MockupResult> {
         const designBuffer = await signedDesignBuffer(asset.file_url!, supabaseUrl);
         const updates: Record<string, string> = {};
 
-        // Male mockup
-        if (!asset.mockup_male_url) {
-          console.log(`[${AGENT}] Male M${variant + 1}: #${asset.design_number}`);
-          const imageFile = await toFile(Readable.from(designBuffer), "design.png", { type: "image/png" });
-          const maleRes = await (openai.images.edit({
-            model: "gpt-image-1",
-            image: imageFile,
-            prompt: MALE_PROMPTS[variant] +
-              "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
-            size: "1024x1024",
-            n: 1,
-          } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
-          const maleB64 = maleRes.data?.[0]?.b64_json;
-          if (!maleB64) throw new Error("No b64_json in gpt-image-1 male response");
-          const maleBuf = Buffer.from(maleB64, "base64");
-          updates.mockup_male_url = await uploadMockup(supabaseUrl, maleBuf, `${label}-male-m${variant + 1}-${Date.now()}.png`);
+        // Generate male + female in parallel — both use the same design buffer
+        // but independent toFile() instances (stream can only be consumed once).
+        const needsMale = !asset.mockup_male_url;
+        const needsFemale = !asset.mockup_female_url;
+
+        console.log(
+          `[${AGENT}] Generating (parallel) M${variant + 1}/F${variant + 1}: #${asset.design_number}`,
+        );
+
+        const [maleResult, femaleResult] = await Promise.all([
+          needsMale
+            ? (async () => {
+                const imageFile = await toFile(Readable.from(designBuffer), "design.png", { type: "image/png" });
+                const res = await (openai.images.edit({
+                  model: "gpt-image-1",
+                  image: imageFile,
+                  prompt: MALE_PROMPTS[variant] +
+                    "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
+                  size: "1024x1024",
+                  n: 1,
+                } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
+                const b64 = res.data?.[0]?.b64_json;
+                if (!b64) throw new Error("No b64_json in gpt-image-1 male response");
+                return Buffer.from(b64, "base64");
+              })()
+            : Promise.resolve(null),
+          needsFemale
+            ? (async () => {
+                const imageFile = await toFile(Readable.from(Buffer.from(designBuffer)), "design.png", { type: "image/png" });
+                const res = await (openai.images.edit({
+                  model: "gpt-image-1",
+                  image: imageFile,
+                  prompt: FEMALE_PROMPTS[variant] +
+                    "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
+                  size: "1024x1024",
+                  n: 1,
+                } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
+                const b64 = res.data?.[0]?.b64_json;
+                if (!b64) throw new Error("No b64_json in gpt-image-1 female response");
+                return Buffer.from(b64, "base64");
+              })()
+            : Promise.resolve(null),
+        ]);
+
+        if (maleResult) {
+          updates.mockup_male_url = await uploadMockup(supabaseUrl, maleResult, `${label}-male-m${variant + 1}-${Date.now()}.png`);
           result.generated++;
           console.log(`[${AGENT}] ✓ Male: #${asset.design_number}`);
-          await new Promise(r => setTimeout(r, 500));
         }
-
-        // Female mockup
-        if (!asset.mockup_female_url) {
-          console.log(`[${AGENT}] Female F${variant + 1}: #${asset.design_number}`);
-          const imageFile2 = await toFile(Readable.from(designBuffer), "design.png", { type: "image/png" });
-          const femaleRes = await (openai.images.edit({
-            model: "gpt-image-1",
-            image: imageFile2,
-            prompt: FEMALE_PROMPTS[variant] +
-              "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
-            size: "1024x1024",
-            n: 1,
-          } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
-          const femaleB64 = femaleRes.data?.[0]?.b64_json;
-          if (!femaleB64) throw new Error("No b64_json in gpt-image-1 female response");
-          const femaleBuf = Buffer.from(femaleB64, "base64");
-          updates.mockup_female_url = await uploadMockup(supabaseUrl, femaleBuf, `${label}-female-f${variant + 1}-${Date.now()}.png`);
+        if (femaleResult) {
+          updates.mockup_female_url = await uploadMockup(supabaseUrl, femaleResult, `${label}-female-f${variant + 1}-${Date.now()}.png`);
           result.generated++;
           console.log(`[${AGENT}] ✓ Female: #${asset.design_number}`);
-          await new Promise(r => setTimeout(r, 500));
         }
 
         if (Object.keys(updates).length > 0) {
