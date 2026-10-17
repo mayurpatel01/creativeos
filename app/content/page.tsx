@@ -31,6 +31,7 @@ import { hasAdminCookie } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { ContentClient } from "./content-client";
 
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Content · CreativeOS" };
 
 export type BlogDraft = {

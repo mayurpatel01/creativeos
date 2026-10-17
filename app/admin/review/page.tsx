@@ -5,6 +5,8 @@ import { hasAdminCookie } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { ReviewQueue, type ReviewItem } from "./review-queue";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Review Queue · CreativeOS",
 };

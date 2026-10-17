@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { QaClient } from "./qa-client";
 
-export const instant = false;
+export const dynamic = "force-dynamic";
 
 export type QaIssueRow = {
   id: string;
