@@ -255,7 +255,13 @@ async function processAsset(
 }> {
   const supabase = getSupabaseAdmin();
   const label = `#${asset.design_number ?? "?"} ${asset.suggested_filename}`;
-  const filePath = designStoragePath(asset.god, asset.suggested_filename);
+  // Append a timestamp so re-generated designs never collide with the old path
+  // in the bucket or in a CDN/browser cache. E.g. "ganesh_guyana.png" becomes
+  // "ganesh_guyana_1729170000.png" on first gen and "ganesh_guyana_1729171234.png"
+  // on regeneration. The old file is deleted by resetDesignFile before this runs.
+  const base = asset.suggested_filename.replace(/\.png$/i, "");
+  const versionedFilename = `${base}_${Math.floor(Date.now() / 1000)}.png`;
+  const filePath = designStoragePath(asset.god, versionedFilename);
 
   log(`${label}: generating image with ${IMAGE_MODEL}`);
   const started = Date.now();
