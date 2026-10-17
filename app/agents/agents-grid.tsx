@@ -285,6 +285,21 @@ function CardShell({
             )}
           </dd>
         </div>
+        {card.lastRun?.completedAt && (
+          <div>
+            <dt className="text-xs text-neutral-500">Completed</dt>
+            <dd className="mt-0.5 text-neutral-200">
+              <LocalTime iso={card.lastRun.completedAt} />
+              <span className="ml-2 text-xs text-neutral-500">
+                ({card.lastRun.status === "failed" ? (
+                  <span className="text-red-400">failed</span>
+                ) : (
+                  <span className="text-emerald-400">done</span>
+                )})
+              </span>
+            </dd>
+          </div>
+        )}
         {card.lastRun && (
           <div>
             <dt className="text-xs text-neutral-500">Last run summary</dt>
