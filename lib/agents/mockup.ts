@@ -23,10 +23,13 @@ const MOCKUP_BUCKET = "mockups";
 
 // Shared instruction appended to every full-front prompt.
 // "naturally sized" stops gpt-image-1 from enlarging the print unrealistically.
+// "only on shirt fabric" stops it bleeding onto arms/hands when arms cross the chest.
 const FULL_PRINT_NOTE =
   "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — " +
-  "printed at a natural, realistic size on the front of the shirt (not enlarged or distorted), " +
-  "clearly legible but proportional to how a real screen-printed tee looks when worn.";
+  "printed at a natural, realistic size on the front of the shirt. " +
+  "The graphic appears ONLY on the shirt fabric — never on the person's arms, hands, or skin. " +
+  "The person's arms must not cross over or obscure the chest print. " +
+  "Proportional to how a real screen-printed tee looks when worn, clearly legible.";
 
 // Appended to every chest/left-breast prompt.
 const CHEST_PRINT_NOTE =
@@ -47,14 +50,14 @@ Bokeh temple carvings in background. Cinematic lighting, photorealistic, 85mm po
 
   // M2 — early 30s, medium complexion, confident, outdoor temple courtyard
   `A South Asian man in his early 30s, medium brown complexion, athletic build, slight stubble,
-wearing this graphic t-shirt in an outdoor temple courtyard at golden hour. He leans casually
-against an ancient stone pillar, arms crossed, confident expression, looking slightly off-camera.
+wearing this graphic t-shirt in an outdoor temple courtyard at golden hour. He stands tall,
+arms relaxed at his sides, confident expression, looking slightly off-camera.
 Marigold garlands blur in the background. Warm golden tones, photorealistic, lifestyle photography style.`,
 
   // M3 — late 20s, darker complexion, devotional, home puja room
   `A South Asian man in his late 20s, deeper brown complexion, relaxed posture, curly hair,
-wearing this graphic t-shirt while seated cross-legged in front of a home puja room. He holds
-folded hands in prayer, eyes closed, face serene. Incense smoke curls upward beside brass idols.
+wearing this graphic t-shirt while seated cross-legged in front of a home puja room. His hands
+rest open on his knees, eyes closed, face serene. Incense smoke curls upward beside brass idols.
 Soft window light, photorealistic, intimate home setting.`,
 
   // M4 — 40s, salt-and-pepper beard, wise expression, river ghats at dawn
@@ -66,8 +69,8 @@ Warm dawn light, photorealistic, wide-angle lifestyle shot.`,
   // M5 — college-age, cheerful laugh, rooftop Diwali
   `A South Asian man in his early 20s, lighter-medium complexion, slim build, big open smile and
 laughing expression, wearing this graphic t-shirt on a rooftop decorated for Diwali. String lights
-glow warmly around him. He holds a sparkler at arm's length, looking at it joyfully.
-Night setting, warm bokeh, photorealistic.`,
+glow warmly around him. He holds one arm out to his side holding a sparkler, chest fully visible,
+looking at the camera joyfully. Night setting, warm bokeh, photorealistic.`,
 
   // M6 — late 30s, stocky build, relaxed outdoors, temple festival grounds
   `A South Asian man in his late 30s, darker brown complexion, stocky build, neat short beard,
@@ -85,14 +88,14 @@ Night time, warm festive glow, photorealistic, lifestyle portrait.`,
 
   // F2 — late 20s, medium complexion, focused and smiling, rangoli
   `A South Asian woman in her late 20s, medium brown complexion, hair pulled back in a loose bun,
-wearing this graphic t-shirt while crouching near a large vibrant rangoli. She places flower petals
-carefully, smiling at her work. Soft natural daylight, reds and yellows of the rangoli in frame.
-Photorealistic, warm tones.`,
+wearing this graphic t-shirt while standing near a large vibrant rangoli. She looks down at it
+admiringly, arms relaxed at her sides, smiling. Soft natural daylight, reds and yellows of the
+rangoli in frame. Photorealistic, warm tones.`,
 
   // F3 — early 30s, darker complexion, confident, cultural festival
   `A South Asian woman in her early 30s, deeper brown complexion, wavy shoulder-length hair,
 wearing this graphic t-shirt at a Hindu cultural festival. She faces the camera with a warm,
-confident smile, one hand resting on her hip. Colorful fabric and lanterns blur behind her.
+confident smile, arms relaxed at her sides. Colorful fabric and lanterns blur behind her.
 Daytime natural light, photorealistic, street portrait style.`,
 
   // F4 — 40s, graceful, temple courtyard, soft expression
@@ -109,9 +112,10 @@ Bright daytime sky behind her, photorealistic, candid festival photography.`,
 
   // F6 — late 20s, slim, thoughtful, puja candles
   `A South Asian woman in her late 20s, darker complexion, long braided hair, slim build,
-wearing this graphic t-shirt while lighting a row of clay diyas at dusk. She focuses on the flame,
-expression peaceful and contemplative, profile half-turned toward the camera.
-Warm diya glow, dark dusk background, photorealistic, cinematic lighting.`,
+wearing this graphic t-shirt while standing near a row of glowing clay diyas at dusk. She gazes
+at the flames, arms at her sides, expression peaceful and contemplative, three-quarter turn toward
+the camera so the t-shirt front is clearly visible. Warm diya glow, dark dusk background,
+photorealistic, cinematic lighting.`,
 ];
 
 // Chest-print variants — same people, different instruction.
