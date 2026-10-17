@@ -5,8 +5,6 @@ import { getLatestRuns, isStale } from "@/lib/agents/runs";
 import { AGENTS } from "@/lib/agents/registry";
 import { ReportsClient } from "./reports-client";
 
-export const dynamic = "force-dynamic";
-
 export type ReportRow = {
   id: string;
   topic: string;

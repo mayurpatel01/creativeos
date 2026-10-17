@@ -5,8 +5,6 @@ import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { AdminDashboard, type AdminAsset } from "./dashboard";
 
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "Admin · CreativeOS",
 };

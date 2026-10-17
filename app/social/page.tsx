@@ -3,8 +3,6 @@ import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { SocialClient } from "./social-client";
 
-export const dynamic = "force-dynamic";
-
 export type SocialPostRow = {
   id: string;
   asset_id: string;
