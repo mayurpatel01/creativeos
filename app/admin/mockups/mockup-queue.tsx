@@ -14,6 +14,7 @@ export type MockupItem = {
   size: string | null;
   mockupMaleUrl: string | null;
   mockupFemaleUrl: string | null;
+  fileUrl: string | null;
 };
 
 async function postJson<T extends { success: boolean }>(url: string, body: unknown): Promise<T | { success: false; error: string }> {
@@ -112,7 +113,7 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
   const [error, setError] = useState<string | null>(null);
   const [redoMale, setRedoMale] = useState(false);
   const [redoFemale, setRedoFemale] = useState(false);
-  const [counts, setCounts] = useState({ approved: 0, redone: 0 });
+  const [counts, setCounts] = useState({ approved: 0, redone: 0, skipped: 0 });
 
   const current = items[index];
 
@@ -126,6 +127,15 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
   const advance = useCallback(() => {
     setIndex((i) => i + 1);
   }, []);
+
+  const skip = useCallback(() => {
+    if (!current || busy) return;
+    setCounts((c) => ({ ...c, skipped: c.skipped + 1 }));
+    setRedoMale(false);
+    setRedoFemale(false);
+    setError(null);
+    advance();
+  }, [current, busy, advance]);
 
   const submit = useCallback(async () => {
     if (!current || busy) return;
@@ -168,6 +178,9 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
       if (e.key === "ArrowRight" || e.key === " ") {
         e.preventDefault();
         void submit();
+      } else if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        skip();
       } else if (e.key === "Escape") {
         setRedoMale(false);
         setRedoFemale(false);
@@ -175,7 +188,7 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, busy, submit]);
+  }, [current, busy, submit, skip]);
 
   // Refresh once the queue is done
   const finished = !current;
@@ -219,7 +232,8 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
             <h2 className="mt-4 text-2xl font-semibold text-white">All mockups reviewed!</h2>
             {total > 0 && (
               <p className="mt-2 text-sm text-neutral-400">
-                This session: {counts.approved} approved, {counts.redone} flagged for redo.
+                This session: {counts.approved} approved, {counts.redone} flagged for redo
+                {counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}.
               </p>
             )}
             <Link
@@ -249,8 +263,32 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
               />
             </dl>
 
-            {/* Side-by-side mockup panels */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Original design + mockup panels */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* Original design thumbnail */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Original</span>
+                </div>
+                <div
+                  className="relative aspect-square w-full overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900"
+                  style={{ backgroundImage: "repeating-conic-gradient(#1a1a1a 0% 25%, #111 0% 50%)", backgroundSize: "16px 16px" }}
+                >
+                  {current.fileUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={current.fileUrl}
+                      alt="Original design"
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-neutral-600">
+                      No source file
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <MockupPanel
                 label="Male"
                 url={current.mockupMaleUrl}
@@ -300,10 +338,19 @@ export function MockupQueue({ items }: { items: MockupItem[] }) {
                   ? `↺ Send for redo (${[redoMale && "male", redoFemale && "female"].filter(Boolean).join(" + ")})`
                   : "✓ Approve — looks good"}
               </button>
+              <button
+                type="button"
+                onClick={skip}
+                disabled={busy}
+                className="rounded-lg border border-neutral-700 px-4 py-3 text-sm font-medium text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:opacity-50"
+                title="Skip for now — come back later (S)"
+              >
+                Skip
+              </button>
             </div>
 
             <p className="mt-3 text-center text-[11px] text-neutral-600">
-              Click ↺ Redo to flag a mockup · Space or → to {hasRedoSelection ? "confirm redo" : "approve"}
+              Click ↺ Redo to flag · Space/→ to {hasRedoSelection ? "confirm redo" : "approve"} · S to skip
             </p>
           </article>
         )}
