@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { getSignedImageUrls } from "../actions";
+import { getSignedImageUrls, resetMockupsForAsset } from "../actions";
 import { finalApproveAsset } from "./actions";
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,9 @@ function Thumb({ src, label }: { src: string | null | undefined; label: string }
 
 function DesignRow({ asset, signedUrl }: { asset: MasterAsset; signedUrl: string | null }) {
   const [pending, startTransition] = useTransition();
+  const [resetPending, startResetTransition] = useTransition();
   const [localFinalApprovedAt, setLocalFinalApprovedAt] = useState<string | null>(asset.finalApprovedAt);
+  const [resetDone, setResetDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Merge server state with optimistic local state
@@ -137,6 +139,20 @@ function DesignRow({ asset, signedUrl }: { asset: MasterAsset; signedUrl: string
       const result = await finalApproveAsset(asset.id);
       if (result.ok) {
         setLocalFinalApprovedAt(new Date().toISOString());
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  function handleResetMockups() {
+    const label = asset.designNumber !== null ? `#${asset.designNumber}` : asset.name;
+    if (!window.confirm(`Reset mockups for ${label}?\n\nThis will clear the existing mockups so Bipasha regenerates them from the current design file.`)) return;
+    setError(null);
+    startResetTransition(async () => {
+      const result = await resetMockupsForAsset(asset.id);
+      if (result.ok) {
+        setResetDone(true);
       } else {
         setError(result.error);
       }
@@ -213,13 +229,13 @@ function DesignRow({ asset, signedUrl }: { asset: MasterAsset; signedUrl: string
         </div>
       </div>
 
-      {/* Approve button */}
+      {/* Approve / Reset buttons */}
       <div className="flex flex-col items-end gap-1 sm:w-36 sm:flex-shrink-0">
         {canApprove && (
           <button
             type="button"
             onClick={handleFinalApprove}
-            disabled={pending}
+            disabled={pending || resetPending}
             className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${
               state === "complete"
                 ? "border border-emerald-700 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/60"
@@ -228,6 +244,22 @@ function DesignRow({ asset, signedUrl }: { asset: MasterAsset; signedUrl: string
           >
             {buttonLabel}
           </button>
+        )}
+        {/* Reset mockups button — only shown for stale designs */}
+        {state === "stale" && !resetDone && (
+          <button
+            type="button"
+            onClick={handleResetMockups}
+            disabled={resetPending || pending}
+            className="whitespace-nowrap rounded-lg border border-orange-700/60 bg-orange-950/40 px-4 py-2 text-xs font-medium text-orange-300 transition hover:bg-orange-900/50 disabled:opacity-50"
+          >
+            {resetPending ? "Resetting…" : "↺ Reset Mockups"}
+          </button>
+        )}
+        {resetDone && (
+          <p className="text-right text-[11px] text-orange-400">
+            Mockups cleared — Bipasha will regenerate
+          </p>
         )}
         {error && (
           <p className="text-right text-[11px] text-red-400">{error}</p>
