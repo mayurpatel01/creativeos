@@ -39,6 +39,9 @@ export type AdminAsset = {
   gelatoProductId: string | null;
   gelatoProductUrl: string | null;
   gelatoStatus: string | null;
+  mockupMaleUrl: string | null;
+  mockupFemaleUrl: string | null;
+  mockupReviewedAt: string | null;
 };
 
 type Collection = { id: string; name: string };
@@ -214,6 +217,19 @@ export function AdminDashboard({
             >
               Review Queue ({assets.filter((a) => a.status === "dalle_done").length} pending)
             </Link>
+            {(() => {
+              const mockupsPending = assets.filter(
+                (a) => (a.mockupMaleUrl || a.mockupFemaleUrl) && !a.mockupReviewedAt
+              ).length;
+              return mockupsPending > 0 ? (
+                <Link
+                  href="/admin/mockups"
+                  className="rounded-lg border border-[#c9a84c]/60 px-3 py-2 text-sm font-medium text-[#c9a84c] transition hover:bg-[#c9a84c]/15"
+                >
+                  Mockup Review ({mockupsPending} pending)
+                </Link>
+              ) : null;
+            })()}
             <Link
               href="/agents"
               className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c]"
@@ -241,6 +257,7 @@ export function AdminDashboard({
             { href: "/content",       label: "Content" },
             { href: "/qa",            label: "QA" },
             { href: "/admin/review",  label: "Review Queue" },
+            { href: "/admin/mockups", label: "Mockup Review" },
             { href: "/agents",        label: "Agents" },
             { href: "/rani",          label: "Rani" },
             { href: "/reports",       label: "Priya's Reports" },

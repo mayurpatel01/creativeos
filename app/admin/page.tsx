@@ -126,6 +126,9 @@ async function AdminContent({
       gelatoProductId: a.gelato_product_id ?? null,
       gelatoProductUrl: a.gelato_product_url ?? null,
       gelatoStatus: a.gelato_status ?? null,
+      mockupMaleUrl: a.mockup_male_url ?? null,
+      mockupFemaleUrl: a.mockup_female_url ?? null,
+      mockupReviewedAt: a.mockup_reviewed_at ?? null,
     };
   });
 
