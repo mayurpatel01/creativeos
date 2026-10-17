@@ -5,6 +5,8 @@ import { getLatestRuns, isStale } from "@/lib/agents/runs";
 import { AGENTS } from "@/lib/agents/registry";
 import { ReportsClient } from "./reports-client";
 
+export const instant = false;
+
 export type ReportRow = {
   id: string;
   topic: string;

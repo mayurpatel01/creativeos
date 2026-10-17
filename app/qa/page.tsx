@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { QaClient } from "./qa-client";
 
+export const instant = false;
+
 export type QaIssueRow = {
   id: string;
   asset_id: string;

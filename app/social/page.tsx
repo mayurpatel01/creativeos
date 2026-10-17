@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { SocialClient } from "./social-client";
 
+export const instant = false;
+
 export type SocialPostRow = {
   id: string;
   asset_id: string;
