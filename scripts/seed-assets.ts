@@ -1,5 +1,15 @@
 import { getSupabaseAdmin } from "../lib/supabase.ts";
 
+function makeSlug(...parts: (string | number | null | undefined)[]): string {
+  return parts
+    .filter(Boolean)
+    .join("-")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 const GODS: Record<string, { name: string; description: string }> = {
   GANESH: {
     name: "Ganesh",
@@ -148,7 +158,14 @@ if (highestError) throw highestError;
 let nextNumber = (highest?.design_number ?? FIRST_DESIGN_NUMBER - 1) + 1;
 const toInsert = rows
   .filter((r) => !seeded.has(r.suggested_filename))
-  .map((r) => ({ ...r, design_number: nextNumber++ }));
+  .map((r) => {
+    const num = nextNumber++;
+    return {
+      ...r,
+      design_number: num,
+      slug: makeSlug(r.god, r.country, r.size_variant, num),
+    };
+  });
 
 if (toInsert.length === 0) {
   console.log(`All ${rows.length} flag combo designs already exist. Nothing to insert.`);
