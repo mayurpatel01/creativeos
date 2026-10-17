@@ -1,5 +1,4 @@
-export const dynamic = "force-dynamic";
-
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -41,7 +40,10 @@ export type ShippingAddress = {
   email: string;
 };
 
-export default async function OrdersPage() {
+// Data-fetching split into its own async component so cookies() + the
+// Supabase query are inside a <Suspense> boundary — required by Next.js 16
+// when cacheComponents is enabled (route segment `dynamic` is not allowed).
+async function OrdersData() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("admin_token");
   if (!adminCookie?.value) redirect("/admin/login");
@@ -60,14 +62,24 @@ export default async function OrdersPage() {
 
   const counts = {
     total: orders.length,
-    pending: orders.filter(o => o.status === "pending_payment").length,
-    paid: orders.filter(o => o.status === "paid").length,
-    placed: orders.filter(o => o.status === "gelato_placed").length,
-    error: orders.filter(o => ["gelato_error", "paid_variant_error", "paid_no_address"].includes(o.status)).length,
+    pending: orders.filter((o) => o.status === "pending_payment").length,
+    paid: orders.filter((o) => o.status === "paid").length,
+    placed: orders.filter((o) => o.status === "gelato_placed").length,
+    error: orders.filter((o) =>
+      ["gelato_error", "paid_variant_error", "paid_no_address"].includes(o.status),
+    ).length,
     revenue: orders
-      .filter(o => o.status !== "pending_payment")
+      .filter((o) => o.status !== "pending_payment")
       .reduce((sum, o) => sum + (o.total_usd ?? 0), 0),
   };
 
   return <OrdersClient orders={orders} counts={counts} />;
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-neutral-400">Loading orders…</div>}>
+      <OrdersData />
+    </Suspense>
+  );
 }
