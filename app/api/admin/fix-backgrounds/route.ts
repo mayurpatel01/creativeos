@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
-import { hasAdminCookie } from "@/lib/admin-auth";
+import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { DESIGN_BUCKET, PUBLIC_DESIGN_BUCKET, publicDesignPath } from "@/lib/design-storage";
 
@@ -71,7 +71,9 @@ async function removeBackground(imageBytes: Buffer, label: string): Promise<Buff
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await hasAdminCookie())) {
+  const adminKey = req.headers.get("x-admin-key");
+  const authorized = isValidAdminKey(adminKey) || (await hasAdminCookie());
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
