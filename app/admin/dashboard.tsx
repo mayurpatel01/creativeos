@@ -252,33 +252,6 @@ export function AdminDashboard({
           </div>
         </header>
 
-        {/* Quick-nav to all internal pages */}
-        <nav className="mt-4 flex flex-wrap gap-2" aria-label="Site navigation">
-          {[
-            { href: "/content",       label: "Content" },
-            { href: "/qa",            label: "QA" },
-            { href: "/admin/master",  label: "⭐ Master Approval" },
-            { href: "/admin/review",  label: "Review Queue" },
-            { href: "/admin/mockups", label: "Mockup Review" },
-            { href: "/admin/orders",  label: "Orders" },
-            { href: "/agents",        label: "Agents" },
-            { href: "/rani",          label: "Rani" },
-            { href: "/social",         label: "Social Posts" },
-            { href: "/reports",       label: "Priya's Reports" },
-            { href: "/shop",          label: "Shop ↗", external: true },
-          ].map(({ href, label, external }) => (
-            <Link
-              key={href}
-              href={href}
-              target={external ? "_blank" : undefined}
-              rel={external ? "noopener noreferrer" : undefined}
-              className="rounded-md border border-neutral-800 bg-[#111] px-3 py-1.5 text-xs text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {stats.map((stat) => (
             <button
@@ -490,22 +463,20 @@ export function AdminDashboard({
 function RegenerateButton({ asset }: { asset: AdminAsset }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [reason, setReason] = useState("");
 
-  function regenerate() {
-    const label = asset.designNumber === null ? asset.filename : `#${asset.designNumber}`;
-    if (
-      !window.confirm(
-        `Regenerate ${label}? This deletes the current image and sends the design back to not_started for Kajol's next run.`,
-      )
-    ) {
-      return;
-    }
+  function handleConfirm() {
+    setShowModal(false);
     setError(null);
     startTransition(async () => {
-      const result = await resetDesignForRegeneration(asset.id);
+      const result = await resetDesignForRegeneration(asset.id, reason);
       if (!result.ok) setError(result.error);
+      setReason("");
     });
   }
+
+  const label = asset.designNumber === null ? asset.filename : `#${asset.designNumber}`;
 
   return (
     <>
@@ -516,12 +487,55 @@ function RegenerateButton({ asset }: { asset: AdminAsset }) {
       )}
       <button
         type="button"
-        onClick={regenerate}
+        onClick={() => setShowModal(true)}
         disabled={pending}
         className="whitespace-nowrap rounded-md border border-neutral-600 px-3 py-1 text-xs font-medium text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c] disabled:opacity-50"
       >
         {pending ? "Resetting…" : "Regenerate"}
       </button>
+
+      {/* Reason modal */}
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowModal(false); setReason(""); } }}
+        >
+          <div className="w-full max-w-md rounded-xl border border-neutral-700 bg-[#1a1a1a] p-5 shadow-2xl">
+            <h2 className="mb-1 text-base font-bold text-white">Regenerate {label}?</h2>
+            <p className="mb-4 text-xs text-neutral-500">
+              The current image will be deleted and sent back to Kajol. This is logged for your records.
+            </p>
+            <label className="mb-1 block text-xs font-medium text-neutral-400">
+              Reason <span className="text-neutral-600">(optional but recommended)</span>
+            </label>
+            <textarea
+              autoFocus
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleConfirm(); }}
+              placeholder="e.g. white background, wrong style, customer complaint #123…"
+              rows={3}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-neutral-500 focus:outline-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowModal(false); setReason(""); }}
+                className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                className="rounded-lg bg-[#c9a84c] px-4 py-2 text-sm font-semibold text-black hover:bg-[#d4b060]"
+              >
+                Regenerate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

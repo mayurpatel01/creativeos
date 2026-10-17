@@ -146,14 +146,41 @@ export async function getSignedImageUrl(filePath: string): Promise<string | null
 }
 
 // Sends a design back to Kajol: deletes its stored image and resets it to
-// not_started. Allowed for any design with a file, or that is dalle_done.
-export async function resetDesignForRegeneration(assetId: string): Promise<AssignResult> {
+// not_started. Logs the reason + old file path in design_regenerations.
+export async function resetDesignForRegeneration(
+  assetId: string,
+  reason?: string,
+): Promise<AssignResult> {
   if (!(await hasAdminCookie())) {
     return { ok: false, error: "Your admin session has expired. Sign in again." };
   }
 
+  const supabase = getSupabaseAdmin();
+
+  // Snapshot current state before the reset for the audit log.
+  const { data: before } = await supabase
+    .from("assets")
+    .select("design_number, file_path, status")
+    .eq("id", assetId)
+    .maybeSingle();
+
   const result = await resetDesignFile(assetId);
   if (!result.ok) return { ok: false, error: result.error };
+
+  // Write the audit log row (non-blocking — a failure here doesn't fail the reset).
+  supabase
+    .from("design_regenerations")
+    .insert({
+      asset_id: assetId,
+      design_number: before?.design_number ?? null,
+      triggered_by: "admin",
+      reason: reason?.trim() || null,
+      old_file_path: before?.file_path ?? null,
+      old_status: before?.status ?? null,
+    })
+    .then(({ error }) => {
+      if (error) console.error("[regen-log] failed to write audit row:", error.message);
+    });
 
   refresh();
   return { ok: true };
