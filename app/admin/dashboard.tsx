@@ -257,6 +257,7 @@ export function AdminDashboard({
           {[
             { href: "/content",       label: "Content" },
             { href: "/qa",            label: "QA" },
+            { href: "/admin/master",  label: "⭐ Master Approval" },
             { href: "/admin/review",  label: "Review Queue" },
             { href: "/admin/mockups", label: "Mockup Review" },
             { href: "/admin/orders",  label: "Orders" },
