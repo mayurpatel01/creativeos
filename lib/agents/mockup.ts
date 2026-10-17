@@ -21,49 +21,59 @@ const AGENT = "Bipasha";
 const BATCH_SIZE = 5;
 const MOCKUP_BUCKET = "mockups";
 
-// Six male and six female prompt variants — each describes a visually distinct person
-// (different age, complexion, expression, composition, setting) so a page of 50+ products
-// shows genuine variety rather than the same face repeated.
+// Shared instruction appended to every full-front prompt.
+// "naturally sized" stops gpt-image-1 from enlarging the print unrealistically.
+const FULL_PRINT_NOTE =
+  "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — " +
+  "printed at a natural, realistic size on the front of the shirt (not enlarged or distorted), " +
+  "clearly legible but proportional to how a real screen-printed tee looks when worn.";
+
+// Appended to every chest/left-breast prompt.
+const CHEST_PRINT_NOTE =
+  "\n\nIMPORTANT: The graphic appears as a small left-chest print — " +
+  "approximately 3–4 inches wide, positioned over the left breast pocket area, " +
+  "exactly as provided, not distorted. It should look like a real embroidered or " +
+  "small-print logo tee, not a large front graphic.";
+
+// Six male and six female prompt variants for FULL-FRONT designs.
+// Each describes a visually distinct person so a page of 50+ products shows variety.
 // The agent cycles through them with i % MALE_PROMPTS.length.
 const MALE_PROMPTS = [
   // M1 — young, lighter complexion, reverent, temple interior
   `A South Asian man in his mid-20s, lighter brown complexion, lean build, short neat hair,
 wearing this graphic t-shirt inside an ornate Hindu temple. Warm candlelight from brass diyas
 illuminates his upturned face. He gazes at the deity shrine, expression peaceful and reverent.
-The t-shirt graphic is prominently visible on his chest. Bokeh temple carvings in background.
-Cinematic lighting, photorealistic, 85mm portrait lens.`,
+Bokeh temple carvings in background. Cinematic lighting, photorealistic, 85mm portrait lens.`,
 
   // M2 — early 30s, medium complexion, confident, outdoor temple courtyard
   `A South Asian man in his early 30s, medium brown complexion, athletic build, slight stubble,
 wearing this graphic t-shirt in an outdoor temple courtyard at golden hour. He leans casually
 against an ancient stone pillar, arms crossed, confident expression, looking slightly off-camera.
-Marigold garlands blur in the background. The t-shirt design is clearly visible.
-Warm golden tones, photorealistic, lifestyle photography style.`,
+Marigold garlands blur in the background. Warm golden tones, photorealistic, lifestyle photography style.`,
 
   // M3 — late 20s, darker complexion, devotional, home puja room
   `A South Asian man in his late 20s, deeper brown complexion, relaxed posture, curly hair,
 wearing this graphic t-shirt while seated cross-legged in front of a home puja room. He holds
 folded hands in prayer, eyes closed, face serene. Incense smoke curls upward beside brass idols.
-The t-shirt is fully visible. Soft window light, photorealistic, intimate home setting.`,
+Soft window light, photorealistic, intimate home setting.`,
 
   // M4 — 40s, salt-and-pepper beard, wise expression, river ghats at dawn
   `A South Asian man in his early 40s, medium-dark complexion, close-cropped salt-and-pepper beard,
 broad shoulders, wearing this graphic t-shirt standing at a river ghat at dawn. Soft pink sky
 reflects on the water behind him. He looks directly at the camera with a calm, grounded expression.
-The t-shirt design is fully visible. Warm dawn light, photorealistic, wide-angle lifestyle shot.`,
+Warm dawn light, photorealistic, wide-angle lifestyle shot.`,
 
   // M5 — college-age, cheerful laugh, rooftop Diwali
   `A South Asian man in his early 20s, lighter-medium complexion, slim build, big open smile and
 laughing expression, wearing this graphic t-shirt on a rooftop decorated for Diwali. String lights
 glow warmly around him. He holds a sparkler at arm's length, looking at it joyfully.
-The t-shirt graphic is clearly visible on his chest. Night setting, warm bokeh, photorealistic.`,
+Night setting, warm bokeh, photorealistic.`,
 
   // M6 — late 30s, stocky build, relaxed outdoors, temple festival grounds
   `A South Asian man in his late 30s, darker brown complexion, stocky build, neat short beard,
 wearing this graphic t-shirt while walking through a vibrant Hindu festival ground. He glances
 over his shoulder at the camera with an easy, relaxed smile. Colorful fabric stalls and lanterns
-blur behind him. The t-shirt design is prominently visible. Natural daylight, photorealistic,
-candid street-photography style.`,
+blur behind him. Natural daylight, photorealistic, candid street-photography style.`,
 ];
 
 const FEMALE_PROMPTS = [
@@ -71,38 +81,43 @@ const FEMALE_PROMPTS = [
   `A South Asian woman in her mid-20s, lighter brown complexion, long straight dark hair,
 wearing this graphic t-shirt while holding sparklers during Diwali. She is laughing freely,
 surrounded by warm bokeh lights. Gold jhumkas and slim bangles complement the casual tee.
-The t-shirt design is clearly visible. Night time, warm festive glow, photorealistic, lifestyle portrait.`,
+Night time, warm festive glow, photorealistic, lifestyle portrait.`,
 
   // F2 — late 20s, medium complexion, focused and smiling, rangoli
   `A South Asian woman in her late 20s, medium brown complexion, hair pulled back in a loose bun,
 wearing this graphic t-shirt while crouching near a large vibrant rangoli. She places flower petals
-carefully, smiling at her work. The t-shirt is prominently visible as she leans forward.
-Soft natural daylight, reds and yellows of the rangoli in frame. Photorealistic, warm tones.`,
+carefully, smiling at her work. Soft natural daylight, reds and yellows of the rangoli in frame.
+Photorealistic, warm tones.`,
 
   // F3 — early 30s, darker complexion, confident, cultural festival
   `A South Asian woman in her early 30s, deeper brown complexion, wavy shoulder-length hair,
 wearing this graphic t-shirt at a Hindu cultural festival. She faces the camera with a warm,
 confident smile, one hand resting on her hip. Colorful fabric and lanterns blur behind her.
-The t-shirt design is fully visible. Daytime natural light, photorealistic, street portrait style.`,
+Daytime natural light, photorealistic, street portrait style.`,
 
   // F4 — 40s, graceful, temple courtyard, soft expression
   `A South Asian woman in her early 40s, medium complexion, silver-streaked hair worn loose,
 wearing this graphic t-shirt in a sunlit temple courtyard. She stands beside a flowering jasmine
-arch, looking slightly off-camera with a serene, graceful expression. The t-shirt design is clearly
-visible. Warm afternoon light, photorealistic, editorial lifestyle photography.`,
+arch, looking slightly off-camera with a serene, graceful expression.
+Warm afternoon light, photorealistic, editorial lifestyle photography.`,
 
   // F5 — college-age, playful, rooftop during Holi
   `A South Asian woman in her early 20s, lighter-medium complexion, curly hair with traces of
 pink Holi powder, wearing this graphic t-shirt on a rooftop during Holi celebrations. She grins
-mischievously at the camera, hands dusted with color. The t-shirt design remains clearly readable
-on her chest. Bright daytime sky behind her, photorealistic, candid festival photography.`,
+mischievously at the camera, hands dusted with color.
+Bright daytime sky behind her, photorealistic, candid festival photography.`,
 
   // F6 — late 20s, slim, thoughtful, puja candles
   `A South Asian woman in her late 20s, darker complexion, long braided hair, slim build,
 wearing this graphic t-shirt while lighting a row of clay diyas at dusk. She focuses on the flame,
-expression peaceful and contemplative, profile half-turned toward the camera. The t-shirt design is
-visible. Warm diya glow, dark dusk background, photorealistic, cinematic lighting.`,
+expression peaceful and contemplative, profile half-turned toward the camera.
+Warm diya glow, dark dusk background, photorealistic, cinematic lighting.`,
 ];
+
+// Chest-print variants — same people, different instruction.
+// The graphic is a small left-chest logo, not a large front design.
+const MALE_CHEST_PROMPTS = MALE_PROMPTS; // reuse same scene variety
+const FEMALE_CHEST_PROMPTS = FEMALE_PROMPTS;
 
 export class MockupBusyError extends Error {
   constructor() {
@@ -175,7 +190,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
     // Assets that are live but missing at least one mockup
     const { data: assets, error } = await supabase
       .from("assets")
-      .select("id, design_number, god, file_url, mockup_male_url, mockup_female_url")
+      .select("id, design_number, god, size_variant, file_url, mockup_male_url, mockup_female_url")
       .eq("gelato_status", "active")
       .not("file_url", "is", null)
       .or("mockup_male_url.is.null,mockup_female_url.is.null")
@@ -194,6 +209,10 @@ export async function runMockupAgent(): Promise<MockupResult> {
     for (let i = 0; i < assets.length; i++) {
       const asset = assets[i];
       const variant = i % MALE_PROMPTS.length;
+      const isChest = asset.size_variant === "CHEST";
+      const malePrompts = isChest ? MALE_CHEST_PROMPTS : MALE_PROMPTS;
+      const femalePrompts = isChest ? FEMALE_CHEST_PROMPTS : FEMALE_PROMPTS;
+      const printNote = isChest ? CHEST_PRINT_NOTE : FULL_PRINT_NOTE;
       const label = `${asset.god?.toLowerCase() ?? "design"}-${asset.design_number ?? asset.id.slice(0, 8)}`;
 
       try {
@@ -216,8 +235,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
                 const res = await (openai.images.edit({
                   model: "gpt-image-1",
                   image: imageFile,
-                  prompt: MALE_PROMPTS[variant] +
-                    "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
+                  prompt: malePrompts[variant] + printNote,
                   size: "1024x1024",
                   n: 1,
                 } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
@@ -232,8 +250,7 @@ export async function runMockupAgent(): Promise<MockupResult> {
                 const res = await (openai.images.edit({
                   model: "gpt-image-1",
                   image: imageFile,
-                  prompt: FEMALE_PROMPTS[variant] +
-                    "\n\nIMPORTANT: The t-shirt graphic must remain exactly as provided — legible, on-chest, not distorted.",
+                  prompt: femalePrompts[variant] + printNote,
                   size: "1024x1024",
                   n: 1,
                 } as Parameters<typeof openai.images.edit>[0]) as Promise<OpenAI.ImagesResponse>);
