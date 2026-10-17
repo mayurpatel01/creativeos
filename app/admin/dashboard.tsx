@@ -17,6 +17,7 @@ import {
   approveDesign,
   assignAssetToDesigner,
   resetDesignForRegeneration,
+  resetMockupsForAsset,
   unassignDesigner,
 } from "./actions";
 import { BulkGelatoButton, GelatoButton, GelatoStatus, SyncGelatoStatusButton } from "./gelato";
@@ -412,6 +413,12 @@ export function AdminDashboard({
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
+                    {/* Reset Mockups — shown for any asset with approved mockups */}
+                    {asset.mockupReviewedAt && (
+                      <div className="mb-1.5 flex justify-end">
+                        <ResetMockupsButton asset={asset} />
+                      </div>
+                    )}
                     {asset.status !== "approved" && (
                       <div className="ml-auto flex max-w-[230px] flex-wrap items-center justify-end gap-2">
                         {asset.assignmentStatus === "submitted" && <ApproveButton asset={asset} />}
@@ -513,6 +520,45 @@ function RegenerateButton({ asset }: { asset: AdminAsset }) {
         className="whitespace-nowrap rounded-md border border-neutral-600 px-3 py-1 text-xs font-medium text-neutral-300 transition hover:border-[#c9a84c] hover:text-[#c9a84c] disabled:opacity-50"
       >
         {pending ? "Resetting…" : "Regenerate"}
+      </button>
+    </>
+  );
+}
+
+function ResetMockupsButton({ asset }: { asset: AdminAsset }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    const label = asset.designNumber === null ? asset.filename : `#${asset.designNumber}`;
+    if (
+      !window.confirm(
+        `Reset mockups for ${label}? The old mockups will be cleared and Bipasha will regenerate them on her next run.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await resetMockupsForAsset(asset.id);
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  return (
+    <>
+      {error && (
+        <span role="alert" className="text-[11px] text-red-400">
+          {error}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={reset}
+        disabled={pending}
+        className="whitespace-nowrap rounded-md border border-neutral-700 px-3 py-1 text-xs font-medium text-neutral-500 transition hover:border-orange-500/60 hover:text-orange-400 disabled:opacity-50"
+      >
+        {pending ? "Clearing…" : "↺ Reset Mockups"}
       </button>
     </>
   );

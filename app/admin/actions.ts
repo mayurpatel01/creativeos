@@ -158,3 +158,26 @@ export async function resetDesignForRegeneration(assetId: string): Promise<Assig
   refresh();
   return { ok: true };
 }
+
+// Clears mockup URLs (and reviewed_at) on an asset so Bipasha regenerates
+// them. Used when the design image was updated but old mockups are still set.
+export async function resetMockupsForAsset(assetId: string): Promise<AssignResult> {
+  if (!(await hasAdminCookie())) {
+    return { ok: false, error: "Your admin session has expired. Sign in again." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("assets")
+    .update({
+      mockup_male_url: null,
+      mockup_female_url: null,
+      mockup_reviewed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", assetId);
+
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}

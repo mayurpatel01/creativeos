@@ -42,6 +42,10 @@ export async function resetDesignFile(
       file_type: null,
       resolution_width: null,
       resolution_height: null,
+      // Clear mockups so Bipasha regenerates them against the new design image.
+      mockup_male_url: null,
+      mockup_female_url: null,
+      mockup_reviewed_at: null,
       // Only touch the notes when a reject supplies them.
       ...(options.rejectionNote !== undefined && { rejection_notes: options.rejectionNote }),
       updated_at: new Date().toISOString(),
