@@ -132,30 +132,32 @@ export async function POST(req: NextRequest) {
         });
       if (upErr) throw new Error(`Re-upload failed: ${upErr.message}`);
 
-      // ── Update resolution in DB (dimensions may differ after bg removal) ─
+      // ── Update DB: resolution + reset to dalle_done for re-review ────────
+      // Always reset to dalle_done so the design reappears in the review queue,
+      // even if it was already gelato_pending or gelato_done. The reviewer can
+      // then re-approve and re-submit to Gelato with the fixed transparent image.
+      const wasGelato = asset.status === "gelato_pending" || asset.status === "gelato_done";
       await supabase.from("assets").update({
+        status: "dalle_done",          // back into review queue
         resolution_width: width,
         resolution_height: height,
         updated_at: new Date().toISOString(),
       }).eq("id", asset.id);
 
-      // ── If already live on Gelato, update the public bucket too ──────────
-      const isGelato = asset.status === "gelato_pending" || asset.status === "gelato_done";
-      if (isGelato) {
-        const { error: pubErr } = await supabase.storage
+      // ── If was live on Gelato, also remove the public copy so the old
+      //    white-bg URL stops being served while it's pending re-review ─────
+      if (wasGelato) {
+        const { error: pubRmErr } = await supabase.storage
           .from(PUBLIC_DESIGN_BUCKET)
-          .upload(publicDesignPath(asset.file_path!), transparent, {
-            contentType: "image/png",
-            upsert: true,
-          });
-        if (pubErr) {
-          console.warn(`[fix-backgrounds] ${label}: private fixed but public bucket update failed: ${pubErr.message}`);
+          .remove([publicDesignPath(asset.file_path!)]);
+        if (pubRmErr && !/not found/i.test(pubRmErr.message)) {
+          console.warn(`[fix-backgrounds] ${label}: couldn't remove stale public copy: ${pubRmErr.message}`);
         } else {
-          console.log(`[fix-backgrounds] ${label}: also updated public/designs bucket for Gelato`);
+          console.log(`[fix-backgrounds] ${label}: removed stale white-bg from public bucket`);
         }
       }
 
-      console.log(`[fix-backgrounds] ${label}: fixed ✓ (${width}x${height}${isGelato ? ", public updated" : ""})`);
+      console.log(`[fix-backgrounds] ${label}: fixed ✓ → review queue (${width}x${height}${wasGelato ? ", removed from Gelato public" : ""})`);
       result.fixed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
