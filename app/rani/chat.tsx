@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { RaniStreamEvent } from "../api/rani/chat/route";
 import type { StatusSummary } from "@/lib/rani/status";
 
@@ -36,6 +36,13 @@ export function RaniChat({ summary }: { summary: StatusSummary | null }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Bumped by "New chat" so a request from the old chat can't write into the new one.
   const chatGeneration = useRef(0);
+
+  // Voice state
+  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing" | "speaking">("idle");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceSupported = typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -157,6 +164,203 @@ export function RaniChat({ summary }: { summary: StatusSummary | null }) {
       }
     }
   }
+
+  // Plays Rani's reply through TTS after streaming completes.
+  const speakText = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    setVoiceState("speaking");
+    try {
+      const res = await fetch("/api/voice/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        setVoiceState("idle");
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        setVoiceState("idle");
+      };
+      await audio.play().catch(() => setVoiceState("idle"));
+    } catch {
+      setVoiceState("idle");
+    }
+  }, []);
+
+  // Sends text and optionally reads the response aloud.
+  const sendWithVoice = useCallback(async (text: string, readAloud: boolean) => {
+    const content = text.trim();
+    if (!content || streaming) return;
+
+    const history = [...messages, { role: "user" as const, content }];
+    setMessages([...history, { role: "assistant", content: "" }]);
+    setInput("");
+    setError(null);
+    setStreaming(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const generation = chatGeneration.current;
+    const current = () => chatGeneration.current === generation;
+    let received = "";
+
+    const updateLast = (update: (m: Message) => Message) => {
+      if (!current()) return;
+      setMessages((prev) =>
+        prev.length ? [...prev.slice(0, -1), update(prev[prev.length - 1])] : prev,
+      );
+    };
+
+    const rollback = (message: string) => {
+      if (!current()) return;
+      setMessages((prev) => prev.slice(0, -2));
+      setInput(content);
+      setError(message);
+    };
+
+    try {
+      const res = await fetch("/api/rani/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history.map(({ role, content }) => ({ role, content })),
+        }),
+        signal: controller.signal,
+      });
+
+      if (res.status === 401) { router.push("/admin/login"); return; }
+      if (!res.ok || !res.body) {
+        const body = await res.json().catch(() => null);
+        rollback(body?.error ?? `Request failed (${res.status}).`);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamError: string | null = null;
+      let stopReason: string | null = null;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as RaniStreamEvent;
+          if (event.type === "text") {
+            received += event.text;
+            updateLast((m) => ({ ...m, content: m.content + event.text }));
+          } else if (event.type === "error") {
+            streamError = event.message;
+          } else if (event.type === "done") {
+            stopReason = event.stopReason;
+          }
+        }
+      }
+
+      if (streamError && !received) rollback(streamError);
+      else if (streamError) updateLast((m) => ({ ...m, note: `Response interrupted: ${streamError}` }));
+      else if (stopReason === "refusal" && !received) rollback("Rani declined to answer that. Try rephrasing.");
+      else if (stopReason === "refusal") updateLast((m) => ({ ...m, note: "Rani stopped partway and declined to continue." }));
+      else if (stopReason === "max_tokens") updateLast((m) => ({ ...m, note: "Response hit the length limit." }));
+
+      // Read aloud after full stream — only if voice-triggered and no error
+      if (readAloud && received && !streamError && stopReason !== "refusal") {
+        void speakText(received);
+      }
+    } catch (err) {
+      if (controller.signal.aborted) {
+        // Stop audio if playing
+        audioRef.current?.pause();
+        audioRef.current = null;
+        setVoiceState("idle");
+        if (!current()) {
+          // New chat aborted this
+        } else if (!received) {
+          setMessages((prev) => prev.slice(0, -2));
+          setInput(content);
+        } else {
+          updateLast((m) => ({ ...m, note: "Stopped." }));
+        }
+      } else {
+        console.error("[Rani] chat failed", err);
+        if (received) updateLast((m) => ({ ...m, note: "Connection lost mid-response." }));
+        else rollback("Couldn't reach Rani. Check your connection and try again.");
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      if (current()) {
+        setStreaming(false);
+        if (!readAloud) inputRef.current?.focus();
+      }
+    }
+  }, [messages, streaming, router, speakText]);
+
+  // Mic: press to start recording, release to transcribe + send
+  const startRecording = useCallback(async () => {
+    if (voiceState !== "idle" || streaming) return;
+    // Stop any playing audio first
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; setVoiceState("idle"); }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const mr = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mr;
+      audioChunksRef.current = [];
+
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        audioChunksRef.current = [];
+        if (blob.size < 1000) { setVoiceState("idle"); return; } // too short
+
+        setVoiceState("transcribing");
+        try {
+          const fd = new FormData();
+          fd.append("audio", blob, "voice.webm");
+          const res = await fetch("/api/voice/transcribe", { method: "POST", body: fd });
+          if (!res.ok) throw new Error(`Transcribe failed: ${res.status}`);
+          const { text } = await res.json() as { text: string };
+          if (text?.trim()) {
+            setVoiceState("idle");
+            void sendWithVoice(text.trim(), true);
+          } else {
+            setVoiceState("idle");
+          }
+        } catch (err) {
+          console.error("[voice] transcribe error", err);
+          setVoiceState("idle");
+        }
+      };
+
+      mr.start();
+      setVoiceState("recording");
+    } catch (err) {
+      console.error("[voice] mic access denied", err);
+      setVoiceState("idle");
+    }
+  }, [voiceState, streaming, sendWithVoice]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -300,16 +504,68 @@ export function RaniChat({ summary }: { summary: StatusSummary | null }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask Rani…"
+              placeholder={voiceState === "recording" ? "Listening…" : voiceState === "transcribing" ? "Transcribing…" : "Ask Rani…"}
               rows={1}
               autoFocus
               aria-label="Message Rani"
               className="max-h-48 min-h-[44px] flex-1 resize-y rounded-xl border border-neutral-700 bg-[#0a0a0a] px-4 py-2.5 text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-[#c9a84c] focus:ring-1 focus:ring-[#c9a84c]"
             />
+
+            {/* Mic button — only shown when voice is supported */}
+            {voiceSupported && !streaming && (
+              <button
+                type="button"
+                aria-label={voiceState === "recording" ? "Stop recording" : voiceState === "speaking" ? "Stop speaking" : "Record voice message"}
+                onPointerDown={() => void startRecording()}
+                onPointerUp={stopRecording}
+                onPointerLeave={stopRecording}
+                onClick={() => {
+                  // Also handle as toggle for keyboard/click users
+                  if (voiceState === "speaking") {
+                    audioRef.current?.pause();
+                    audioRef.current = null;
+                    setVoiceState("idle");
+                  }
+                }}
+                disabled={voiceState === "transcribing"}
+                className={[
+                  "h-11 w-11 flex-shrink-0 rounded-xl border transition flex items-center justify-center",
+                  voiceState === "recording"
+                    ? "border-red-500 bg-red-500/10 text-red-400 animate-pulse"
+                    : voiceState === "speaking"
+                    ? "border-[#c9a84c] bg-[#c9a84c]/10 text-[#c9a84c]"
+                    : voiceState === "transcribing"
+                    ? "border-neutral-700 text-neutral-600 cursor-wait"
+                    : "border-neutral-700 text-neutral-400 hover:border-[#c9a84c] hover:text-[#c9a84c]",
+                ].join(" ")}
+              >
+                {voiceState === "speaking" ? (
+                  // Speaker icon
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                  </svg>
+                ) : voiceState === "transcribing" ? (
+                  // Spinner
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                ) : (
+                  // Mic icon
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="22"/>
+                  </svg>
+                )}
+              </button>
+            )}
+
             {streaming ? (
               <button
                 type="button"
-                onClick={() => abortRef.current?.abort()}
+                onClick={() => { abortRef.current?.abort(); audioRef.current?.pause(); audioRef.current = null; setVoiceState("idle"); }}
                 className="h-11 rounded-xl border border-neutral-600 px-4 text-sm text-neutral-300 transition hover:border-red-800 hover:text-red-300"
               >
                 Stop
@@ -324,7 +580,7 @@ export function RaniChat({ summary }: { summary: StatusSummary | null }) {
               </button>
             )}
           </div>
-          <p className="mt-2 text-[11px] text-neutral-600">Enter to send · Shift+Enter for a new line</p>
+          <p className="mt-2 text-[11px] text-neutral-600">Enter to send · Shift+Enter for new line · Hold mic to speak</p>
         </form>
       </div>
     </main>
