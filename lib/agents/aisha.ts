@@ -43,12 +43,13 @@ function toSlug(text: string): string {
 
 async function writeDescription(openai: OpenAI, deity: string, country: string): Promise<string> {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-4o",
     messages: [
       {
         role: "system",
         content: `You write compelling product descriptions for HinduTee.com — premium apparel for the Hindu diaspora.
-Celebrate dual cultural identity without clichés. 2-3 short paragraphs. Speak directly to 2nd-gen Hindus.`,
+Celebrate dual cultural identity without clichés. 2-3 short paragraphs. Speak directly to 2nd-gen Hindus.
+Include natural SEO terms: deity name, country, "t-shirt", "diaspora", "Hindu". Never sound like ad-copy.`,
       },
       {
         role: "user",
@@ -59,41 +60,105 @@ Celebrate dual cultural identity without clichés. 2-3 short paragraphs. Speak d
   return res.choices[0].message.content?.trim() ?? "";
 }
 
+async function pickTargetKeyword(openai: OpenAI, deity: string, country: string): Promise<string> {
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: `You are an SEO strategist for HinduTee.com, a premium apparel brand for the global Hindu diaspora.
+Pick ONE high-intent, rankable primary keyword for a blog post about ${deity} and the ${country} Hindu diaspora community.
+The keyword should:
+- Be specific enough to realistically rank (not just "Hindu t-shirt")
+- Connect the deity/symbol to apparel, gifts, cultural identity, or diaspora life
+- Sound like something a second-generation Hindu in ${country} would search
+Good examples: "Ganesh t-shirt Indian Americans", "Krishna gifts for Hindu diaspora UK", "Durga shirt South Asian Canada", "Shiva apparel British Indian"
+Return ONLY the keyword phrase — nothing else, no punctuation.`,
+      },
+      {
+        role: "user",
+        content: `Keyword for: ${deity} × ${country} Hindu diaspora apparel content`,
+      },
+    ],
+    max_tokens: 25,
+  });
+  return res.choices[0].message.content?.trim() ?? `${deity} t-shirt ${country} diaspora`;
+}
+
 async function writeBlogPost(
   openai: OpenAI,
   deity: string,
   country: string,
   productSlug: string,
   backdate: string,
-): Promise<{ slug: string; title: string; excerpt: string; body: string }> {
+): Promise<{ slug: string; title: string; excerpt: string; body: string; targetKeyword: string }> {
+  // Step 1: get a real target keyword
+  const targetKeyword = await pickTargetKeyword(openai, deity, country);
+
+  // Step 2: write a full-length SEO post around that keyword
   const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-4o",
     messages: [
       {
         role: "system",
-        content: `You are Aisha, content writer for HinduTee.com.
-Write SEO blog posts (700-900 words) that help the Hindu diaspora connect with their culture.
-Blend cultural education, diaspora storytelling, and natural product discovery — never ad-copy.
-Use ## subheadings. Naturally reference our ${deity} × ${country} tee near the end at /products/${productSlug}.
-The title must be SEO-friendly and specific. Return only the article — no frontmatter, no code fences.`,
+        content: `You are Aisha, senior content writer for HinduTee.com — premium apparel celebrating the global Hindu diaspora.
+
+Write a long-form SEO blog post (1,500–2,000 words) that will rank on Google AND be genuinely worth reading for ${country}-based Hindus.
+
+PRIMARY KEYWORD: "${targetKeyword}"
+Use it in:
+- The H1 title (start with # )
+- The first 100 words of the opening paragraph
+- At least 2 H2 subheadings (## )
+- Naturally 4-6 times throughout the body
+
+STRUCTURE (use these ## sections):
+1. Introduction — hook with a relatable diaspora moment, introduce the keyword
+2. The Meaning of ${deity} — real cultural/spiritual depth, not Wikipedia summary
+3. ${deity} in the ${country} Diaspora — specific stories, community life, cultural tension of living between worlds
+4. Expressing Faith Through Fashion — how wearing ${deity} symbolism is an act of identity in ${country}
+5. [One more relevant angle — festivals, gifts for parents, second-gen identity, etc.]
+6. Finding the Right ${deity} Apparel — organic product discovery, link to /products/${productSlug} and mention HinduTee.com
+7. Closing — call to action, invitation to share with community
+
+SEO requirements:
+- Title must include the exact keyword phrase "${targetKeyword}", be under 65 characters, and be compelling
+- Open with the keyword in the first sentence or two
+- Use natural keyword variations throughout (not keyword-stuffed)
+- End with a line starting with META: — a 150–160 character SEO meta description using the keyword phrase
+
+TONE: Warm, culturally fluent, first-person plural ("we", "our community"). Write like a second-gen Hindu who gets it — not a marketer, not a professor. Personal and specific beats generic and informational.
+
+Return ONLY the article followed by the META: line. No frontmatter, no code fences.`,
       },
       {
         role: "user",
-        content: `Write a blog post about ${deity} and the ${country} Hindu diaspora community.`,
+        content: `Write the full blog post targeting: "${targetKeyword}"`,
       },
     ],
+    max_tokens: 3500,
   });
 
-  const body = res.choices[0].message.content?.trim() ?? "";
+  const raw = res.choices[0].message.content?.trim() ?? "";
+
+  // Extract META description if present
+  const metaMatch = raw.match(/\nMETA:\s*(.+)$/m);
+  const metaDescription = metaMatch?.[1]?.trim().slice(0, 160) ?? "";
+  const body = raw.replace(/\nMETA:.*$/m, "").trim();
+
+  // Extract title from first # heading
   const titleMatch = body.match(/^#\s+(.+)$/m);
   const title = titleMatch?.[1]?.replace(/^#+\s*/, "").trim()
     ?? `${deity} and the ${country} Hindu Diaspora`;
-  const excerptMatch = body.match(/\n\n([^#\n].{80,300})/m);
-  const excerpt = excerptMatch?.[1]?.trim().slice(0, 220)
-    ?? `Celebrating ${deity} in the ${country} Hindu community.`;
+
+  // Use meta description as excerpt if available, otherwise grab first prose paragraph
+  const excerpt = metaDescription
+    || body.match(/\n\n([^#\n].{80,300})/m)?.[1]?.trim().slice(0, 220)
+    || `Celebrating ${deity} in the ${country} Hindu community.`;
+
   const slug = toSlug(`${backdate}-${deity}-${country}`);
 
-  return { slug, title, excerpt, body };
+  return { slug, title, excerpt, body, targetKeyword };
 }
 
 export async function runAisha(): Promise<AishaResult> {
@@ -151,9 +216,12 @@ export async function runAisha(): Promise<AishaResult> {
 
         if (!count || count === 0) {
           const backdate = backdateFor(i, assets.length);
-          const { slug, title, excerpt, body } = await writeBlogPost(
+          const { slug, title, excerpt, body, targetKeyword } = await writeBlogPost(
             openai, deity, country, asset.slug!, backdate,
           );
+
+          const wordCount = body.split(/\s+/).length;
+          console.log(`[${AGENT}] Blog word count: ${wordCount} | keyword: "${targetKeyword}"`);
 
           const { error: insertErr } = await supabase.from("blog_posts").insert({
             slug,
@@ -164,7 +232,8 @@ export async function runAisha(): Promise<AishaResult> {
             country,
             published_at: backdate,
             category: "Culture",
-            reading_minutes: Math.ceil(body.split(/\s+/).length / 200),
+            reading_minutes: Math.ceil(wordCount / 200),
+            target_keyword: targetKeyword,
           });
 
           if (insertErr) throw new Error(`Blog insert failed: ${insertErr.message}`);
