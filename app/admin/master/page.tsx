@@ -33,11 +33,16 @@ async function MasterContent() {
   const assets: MasterAsset[] = ((data ?? []) as any[]).map((a) => {
     const updatedAt = a.updated_at ? new Date(a.updated_at).getTime() : 0;
     const mockupReviewedAt = a.mockup_reviewed_at ? new Date(a.mockup_reviewed_at).getTime() : null;
+    const finalApprovedAt = a.final_approved_at ? new Date(a.final_approved_at).getTime() : null;
+    // A design is stale only when the row was updated AFTER both the mockup review
+    // and the final approval. This prevents the approval action itself (which bumps
+    // updated_at) from immediately making the design look stale.
     const isStale =
       !!a.mockup_male_url &&
       !!a.mockup_female_url &&
       mockupReviewedAt !== null &&
-      updatedAt > mockupReviewedAt;
+      updatedAt > mockupReviewedAt &&
+      (finalApprovedAt === null || updatedAt > finalApprovedAt);
 
     return {
       id: a.id,
