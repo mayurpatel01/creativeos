@@ -141,6 +141,8 @@ export async function POST(req: NextRequest) {
       const wasGelato = asset.status === "gelato_pending" || asset.status === "gelato_done";
       await supabase.from("assets").update({
         status: "dalle_done",          // back into review queue
+        gelato_product_id: null,       // clear old product so re-approval isn't blocked
+        gelato_status: null,           // clear so create-product doesn't see a stale error
         resolution_width: width,
         resolution_height: height,
         updated_at: new Date().toISOString(),
