@@ -258,8 +258,10 @@ export function AdminDashboard({
             { href: "/qa",            label: "QA" },
             { href: "/admin/review",  label: "Review Queue" },
             { href: "/admin/mockups", label: "Mockup Review" },
+            { href: "/admin/orders",  label: "Orders" },
             { href: "/agents",        label: "Agents" },
             { href: "/rani",          label: "Rani" },
+            { href: "/social",         label: "Social Posts" },
             { href: "/reports",       label: "Priya's Reports" },
             { href: "/shop",          label: "Shop ↗", external: true },
           ].map(({ href, label, external }) => (
