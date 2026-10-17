@@ -47,7 +47,7 @@ function statusOf(run: AgentRun | undefined): AgentStatus {
 
 // Reads the admin cookie and live data, so it renders at request time inside Suspense.
 async function AgentsContent() {
-  if (!(await hasAdminCookie())) redirect("/admin/login");
+  if (!(await hasAdminCookie())) redirect("/admin/login?next=/agents");
 
   let runs = new Map<string, AgentRun>();
   let loadError: string | null = null;

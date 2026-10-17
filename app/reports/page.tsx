@@ -57,7 +57,7 @@ export type PipelineStats = {
 export default async function ReportsPage() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("admin_token");
-  if (!adminCookie?.value) redirect("/admin/login");
+  if (!adminCookie?.value) redirect("/admin/login?next=/reports");
 
   const supabase = getSupabaseAdmin();
 

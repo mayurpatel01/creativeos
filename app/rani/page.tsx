@@ -19,7 +19,7 @@ export default function RaniPage() {
 
 // Reads the admin cookie and live data, so it renders at request time inside Suspense.
 async function RaniContent() {
-  if (!(await hasAdminCookie())) redirect("/admin/login");
+  if (!(await hasAdminCookie())) redirect("/admin/login?next=/rani");
 
   let summary: StatusSummary | null = null;
   try {

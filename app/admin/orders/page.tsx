@@ -46,7 +46,7 @@ export type ShippingAddress = {
 async function OrdersData() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("admin_token");
-  if (!adminCookie?.value) redirect("/admin/login");
+  if (!adminCookie?.value) redirect("/admin/login?next=/admin/orders");
 
   const supabase = getSupabaseAdmin();
 

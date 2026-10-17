@@ -24,7 +24,7 @@ export type SocialPostRow = {
 export default async function SocialPage() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("admin_token");
-  if (!adminCookie?.value) redirect("/admin/login");
+  if (!adminCookie?.value) redirect("/admin/login?next=/social");
 
   const supabase = getSupabaseAdmin();
 

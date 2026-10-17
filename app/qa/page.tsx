@@ -22,7 +22,7 @@ export type QaIssueRow = {
 export default async function QaPage() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("admin_token");
-  if (!adminCookie?.value) redirect("/admin/login");
+  if (!adminCookie?.value) redirect("/admin/login?next=/qa");
 
   const supabase = getSupabaseAdmin();
 

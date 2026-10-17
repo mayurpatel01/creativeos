@@ -65,7 +65,7 @@ export default function ContentPage() {
 }
 
 async function ContentData() {
-  if (!(await hasAdminCookie())) redirect("/admin/login");
+  if (!(await hasAdminCookie())) redirect("/admin/login?next=/content");
 
   const supabase = getSupabaseAdmin();
 

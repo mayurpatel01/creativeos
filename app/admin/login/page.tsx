@@ -35,6 +35,7 @@ export default function AdminLoginPage({ searchParams }: PageProps<"/admin/login
         />
 
         <Suspense>
+          <LoginHiddenFields searchParams={searchParams} />
           <LoginError searchParams={searchParams} />
         </Suspense>
 
@@ -47,6 +48,16 @@ export default function AdminLoginPage({ searchParams }: PageProps<"/admin/login
       </form>
     </main>
   );
+}
+
+async function LoginHiddenFields({
+  searchParams,
+}: {
+  searchParams: PageProps<"/admin/login">["searchParams"];
+}) {
+  const { next } = await searchParams;
+  if (!next || typeof next !== "string") return null;
+  return <input type="hidden" name="next" value={next} />;
 }
 
 async function LoginError({
