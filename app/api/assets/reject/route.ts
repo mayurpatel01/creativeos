@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
 import { resetDesignFile } from "@/lib/assets/reset-file";
@@ -32,5 +33,7 @@ export async function POST(request: NextRequest) {
   if (!result.ok) {
     return NextResponse.json<RejectResponse>({ success: false, error: result.error }, { status: result.status });
   }
+  revalidatePath("/admin");
+  revalidatePath("/admin/review");
   return NextResponse.json<RejectResponse>({ success: true });
 }

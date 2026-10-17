@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasAdminCookie, isValidAdminKey } from "@/lib/admin-auth";
 import { createProduct, GelatoError, productUrlFrom, templateForSizeVariant } from "@/lib/gelato/client";
@@ -134,5 +135,7 @@ export async function POST(request: NextRequest) {
     console.log(`[gelato] #${asset.design_number}: replaced failed product ${asset.gelato_product_id} with ${product.id}`);
   }
   console.log(`[gelato] #${asset.design_number}: created product ${product.id} (variants and mockups build in the background)`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/review");
   return NextResponse.json<CreateProductResponse>({ success: true, gelatoProductId: product.id, productUrl, imageUrl });
 }
