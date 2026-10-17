@@ -35,16 +35,19 @@ if (isNaN(FROM) || isNaN(TO)) {
 }
 
 // ---------------------------------------------------------------------------
-// Load env (try .env.local first, then process.env)
+// Load env (try .env.local and .env from cwd, then process.env)
 // ---------------------------------------------------------------------------
-try {
-  const envPath = resolve(process.cwd(), ".env.local");
-  const lines = readFileSync(envPath, "utf8").split("\n");
-  for (const line of lines) {
-    const m = line.match(/^([^#=]+)=(.*)$/);
-    if (m) process.env[m[1].trim()] ??= m[2].trim().replace(/^["']|["']$/g, "");
-  }
-} catch { /* no .env.local, use existing process.env */ }
+for (const name of [".env.local", ".env"]) {
+  try {
+    const envPath = resolve(process.cwd(), name);
+    const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+    for (const line of lines) {
+      const m = line.match(/^([^#=]+)=(.*)$/);
+      if (m) process.env[m[1].trim()] ??= m[2].trim().replace(/^["']|["']$/g, "");
+    }
+    break; // stop after first file found
+  } catch { /* try next */ }
+}
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
