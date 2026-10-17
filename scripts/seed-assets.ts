@@ -163,7 +163,7 @@ const toInsert = rows
     return {
       ...r,
       design_number: num,
-      slug: makeSlug(r.god, r.country, r.size_variant, num),
+      slug: makeSlug(r.god, COUNTRIES[r.country] ?? r.country, r.size_variant, num),
     };
   });
 
