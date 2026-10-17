@@ -231,6 +231,7 @@ export async function runAisha(): Promise<AishaResult> {
             god: asset.god,
             country,
             published_at: backdate,
+            published: true,
             category: "Culture",
             reading_minutes: Math.ceil(wordCount / 200),
             target_keyword: targetKeyword,

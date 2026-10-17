@@ -239,10 +239,11 @@ export function AdminDashboard({
         <nav className="mt-4 flex flex-wrap gap-2" aria-label="Site navigation">
           {[
             { href: "/content",       label: "Content" },
-            { href: "/blog",          label: "Blog" },
             { href: "/qa",            label: "QA" },
-            { href: "/social",        label: "Social Posts" },
             { href: "/admin/review",  label: "Review Queue" },
+            { href: "/agents",        label: "Agents" },
+            { href: "/rani",          label: "Rani" },
+            { href: "/reports",       label: "Priya's Reports" },
             { href: "/shop",          label: "Shop ↗", external: true },
           ].map(({ href, label, external }) => (
             <Link
