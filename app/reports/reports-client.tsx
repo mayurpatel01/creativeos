@@ -282,6 +282,15 @@ function DashboardTab({
         </div>
       </section>
 
+      {/* Fix Backgrounds ────────────────────────────────── */}
+      <section>
+        <SectionHeader
+          title="Image Repair"
+          sub="Fix designs saved with white backgrounds (Clipdrop failure recovery)"
+        />
+        <FixBackgroundsPanel />
+      </section>
+
       {/* Blog & QA ──────────────────────────────────────── */}
       <section>
         <SectionHeader title="Content & QA" />
@@ -381,6 +390,120 @@ function ResearchTab({ reports }: { reports: ReportRow[] }) {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// ── Fix Backgrounds panel ─────────────────────────────────────────────────────
+
+function FixBackgroundsPanel() {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ fixed: number; skipped: number; failed: number; errors: string[]; message?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(all = false) {
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    try {
+      const designNumbers = all
+        ? undefined
+        : input
+            .split(/[\s,]+/)
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n));
+
+      const res = await fetch("/api/admin/fix-backgrounds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(all ? {} : { designNumbers }),
+      });
+      const data = await res.json();
+      if (!res.ok) setError(data.error ?? "Unknown error");
+      else setResult(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-900/40 bg-amber-950/10 p-5">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-amber-200">Fix White Backgrounds</h3>
+          <p className="text-[11px] text-neutral-500 mt-0.5">
+            Re-run Clipdrop background removal on designs saved with white backgrounds. No DALL-E credits used.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500 mb-1 block">
+            Design numbers (comma-separated)
+          </label>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="e.g. 1160, 1161, 1162"
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-amber-500 focus:outline-none"
+          />
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => run(false)}
+            disabled={loading || !input.trim()}
+            className="rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2 text-xs font-semibold text-white transition"
+          >
+            {loading ? "Fixing…" : "Fix Selected"}
+          </button>
+          <button
+            onClick={() => run(true)}
+            disabled={loading}
+            className="rounded-lg border border-neutral-700 hover:border-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2 text-xs font-semibold text-neutral-300 transition"
+          >
+            {loading ? "Fixing…" : "Scan Recent 50"}
+          </button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+          <div className="flex gap-4 text-sm">
+            <span className="text-emerald-400">
+              <span className="font-bold">{result.fixed}</span> fixed
+            </span>
+            <span className="text-neutral-400">
+              <span className="font-bold">{result.skipped}</span> skipped (already transparent)
+            </span>
+            {result.failed > 0 && (
+              <span className="text-red-400">
+                <span className="font-bold">{result.failed}</span> failed
+              </span>
+            )}
+          </div>
+          {result.message && (
+            <p className="text-[11px] text-neutral-500 mt-1">{result.message}</p>
+          )}
+          {result.errors.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {result.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-[10px] text-red-400 font-mono">{e}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {error && (
+        <div className="mt-3 rounded-lg border border-red-900/40 bg-red-950/20 p-3">
+          <p className="text-xs text-red-400">{error}</p>
+        </div>
+      )}
     </div>
   );
 }
