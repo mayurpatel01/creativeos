@@ -235,6 +235,28 @@ export function AdminDashboard({
           </div>
         </header>
 
+        {/* Quick-nav to all internal pages */}
+        <nav className="mt-4 flex flex-wrap gap-2" aria-label="Site navigation">
+          {[
+            { href: "/content",       label: "Content" },
+            { href: "/blog",          label: "Blog" },
+            { href: "/qa",            label: "QA" },
+            { href: "/social",        label: "Social Posts" },
+            { href: "/admin/review",  label: "Review Queue" },
+            { href: "/shop",          label: "Shop ↗", external: true },
+          ].map(({ href, label, external }) => (
+            <Link
+              key={href}
+              href={href}
+              target={external ? "_blank" : undefined}
+              rel={external ? "noopener noreferrer" : undefined}
+              className="rounded-md border border-neutral-800 bg-[#111] px-3 py-1.5 text-xs text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {stats.map((stat) => (
             <button
